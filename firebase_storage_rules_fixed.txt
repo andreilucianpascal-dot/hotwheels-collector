@@ -1,0 +1,82 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ✅ USER-SPECIFIC PHOTOS - Private to each user
+    match /users/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && 
+                 request.auth.uid == userId &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*');
+    }
+    
+    // ✅ GLOBAL PHOTOS - READ-ONLY pentru utilizatori
+    // Utilizatorii pot DOAR descărca poze (pentru Browse → Add to Collection)
+    // Utilizatorii NU pot modifica/șterge/uploada în global
+    match /global/{allPaths=**} {
+      allow read: if true; // ✅ Orice utilizator poate citi poze din global (pentru Browse)
+      allow write: if false; // ❌ NICIODATĂ - utilizatorii NU pot modifica global
+    }
+    
+    // ✅ MAINLINE PHOTOS - Utilizatori autentificați pot uploada poze pentru mașinile lor
+    // Path structure: mainline/{carId}/{photoType}/{fileName}.jpg
+    // Example: mainline/a290304f-0da1-432e-ac4b-a7d59cfc895c/full/f40c5d67-2967-4d5f-bca3-941be5041f65.jpg
+    // ✅ READ: Orice utilizator poate citi (pentru Browse)
+    // ✅ WRITE: Doar utilizatori autentificați pot uploada (când salvează mașină nouă)
+    match /mainline/{carId}/{photoType}/{allFiles=**} {
+      allow read: if true; // ✅ Orice utilizator poate citi mainline photos (pentru Browse)
+      allow write: if request.auth != null && // ✅ Doar utilizatori autentificați pot uploada
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ PREMIUM PHOTOS - Utilizatori autentificați pot uploada poze pentru mașinile lor
+    // ✅ READ: Orice utilizator poate citi (pentru Browse)
+    // ✅ WRITE: Doar utilizatori autentificați pot uploada (când salvează mașină nouă)
+    match /premium/{carId}/{photoType}/{allFiles=**} {
+      allow read: if true; // ✅ Orice utilizator poate citi premium photos (pentru Browse)
+      allow write: if request.auth != null && // ✅ Doar utilizatori autentificați pot uploada
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ TREASURE HUNT PHOTOS - Utilizatori autentificați pot uploada poze pentru mașinile lor
+    match /treasure_hunt/{carId}/{photoType}/{allFiles=**} {
+      allow read: if true; // ✅ Orice utilizator poate citi TH photos (pentru Browse)
+      allow write: if request.auth != null && // ✅ Doar utilizatori autentificați pot uploada
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ SUPER TREASURE HUNT PHOTOS - Utilizatori autentificați pot uploada poze pentru mașinile lor
+    match /super_treasure_hunt/{carId}/{photoType}/{allFiles=**} {
+      allow read: if true; // ✅ Orice utilizator poate citi STH photos (pentru Browse)
+      allow write: if request.auth != null && // ✅ Doar utilizatori autentificați pot uploada
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ OTHERS PHOTOS - Utilizatori autentificați pot uploada poze pentru mașinile lor
+    match /others/{carId}/{photoType}/{allFiles=**} {
+      allow read: if true; // ✅ Orice utilizator poate citi others photos (pentru Browse)
+      allow write: if request.auth != null && // ✅ Doar utilizatori autentificați pot uploada
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ PHOTOS DIRECTORY - Allow authenticated users to upload to photos directory
+    match /photos/{allPaths=**} {
+      allow read: if true; // Anyone can read photos
+      allow write: if request.auth != null &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ PUBLIC DIRECTORY - Read-only public access
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
+

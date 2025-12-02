@@ -1,0 +1,73 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && 
+                 request.auth.uid == userId &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*');
+    }
+    
+    // ✅ GLOBAL PHOTOS - Allow authenticated users to upload global photos
+    match /global/{allPaths=**} {
+      allow read: if true; // Anyone can read global photos
+      allow write: if request.auth != null &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ MAINLINE PHOTOS - Allow authenticated users to upload mainline car photos
+    match /mainline/{carId}/{photoType} {
+      allow read: if true; // Anyone can read mainline photos
+      allow write: if request.auth != null &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ PREMIUM PHOTOS - Allow authenticated users to upload premium car photos
+    match /premium/{carId}/{photoType} {
+      allow read: if true; // Anyone can read premium photos
+      allow write: if request.auth != null &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ TREASURE HUNT PHOTOS - Allow authenticated users to upload TH car photos
+    match /treasure_hunt/{carId}/{photoType} {
+      allow read: if true; // Anyone can read TH photos
+      allow write: if request.auth != null &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ SUPER TREASURE HUNT PHOTOS - Allow authenticated users to upload STH car photos
+    match /super_treasure_hunt/{carId}/{photoType} {
+      allow read: if true; // Anyone can read STH photos
+      allow write: if request.auth != null &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ OTHERS PHOTOS - Allow authenticated users to upload others car photos
+    match /others/{carId}/{photoType} {
+      allow read: if true; // Anyone can read others photos
+      allow write: if request.auth != null &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    // ✅ PHOTOS DIRECTORY - Allow authenticated users to upload to photos directory
+    match /photos/{allPaths=**} {
+      allow read: if true; // Anyone can read photos
+      allow write: if request.auth != null &&
+                 request.resource.size < 1 * 1024 * 1024 && // 1MB limit per file
+                 request.resource.contentType.matches('image/.*'); // Only images
+    }
+    
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

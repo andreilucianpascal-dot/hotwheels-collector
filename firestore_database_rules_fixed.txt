@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ✅ USER-SPECIFIC DATA - Private to each user
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
+      
+      // Car collection
+      match /cars/{carId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Photos
+      match /photos/{photoId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && 
+                   request.auth.uid == userId && 
+                   request.resource.size < 1 * 1024 * 1024; // 1MB limit
+      }
+    }
+    
+    // ✅ GLOBAL COLLECTIONS - Utilizatorii pot DOAR CITI și ADĂUGA mașini noi
+    // Utilizatorii NU pot MODIFICA sau ȘTERGE mașini existente create de alți utilizatori
+    
+    match /globalBarcodes/{barcode} {
+      // ✅ READ: Orice utilizator poate citi (pentru Browse și căutare)
+      allow read: if true;
+      
+      // ✅ CREATE: Utilizatori autentificați pot adăuga mașini noi (contribuție)
+      // ✅ UPDATE: Doar dacă utilizatorul este proprietarul inițial (contributorUserId)
+      // ✅ DELETE: NU permite ștergerea (pentru a proteja datele globale)
+      allow create: if request.auth != null && 
+                  request.resource.data.contributorUserId is string &&
+                  request.resource.data.contributorUserId == request.auth.uid;
+      allow update: if request.auth != null &&
+                  request.resource.data.contributorUserId is string &&
+                  request.resource.data.contributorUserId == request.auth.uid &&
+                  resource.data.contributorUserId == request.auth.uid; // Proprietarul inițial
+      allow delete: if false; // ❌ NU permite ștergerea
+    }
+    
+    match /globalCars/{carId} {
+      // ✅ READ: Orice utilizator poate citi (pentru Browse)
+      allow read: if true;
+      
+      // ✅ CREATE: Utilizatori autentificați pot adăuga mașini noi (contribuție)
+      // ✅ UPDATE: Doar dacă utilizatorul este proprietarul inițial (contributorUserId)
+      // ✅ DELETE: NU permite ștergerea (pentru a proteja datele globale)
+      allow create: if request.auth != null && 
+                  request.resource.data.contributorUserId is string &&
+                  request.resource.data.contributorUserId == request.auth.uid;
+      allow update: if request.auth != null &&
+                  request.resource.data.contributorUserId is string &&
+                  request.resource.data.contributorUserId == request.auth.uid &&
+                  resource.data.contributorUserId == request.auth.uid; // Proprietarul inițial
+      allow delete: if false; // ❌ NU permite ștergerea
+    }
+    
+    // ✅ PUBLIC DATA - Read-only pentru toți
+    match /public/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
+
+
+

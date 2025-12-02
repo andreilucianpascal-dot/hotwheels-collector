@@ -1,0 +1,37 @@
+package com.example.hotwheelscollectors.model
+
+data class HotWheelsCar(
+    val id: String = "",
+    val name: String = "",
+    val model: String = "",
+    val brand: String = "",
+    val series: String = "",
+    val subseries: String = "",
+    val year: Int = 0,
+    val number: String = "",
+    val color: String = "",
+    val tampos: String = "",
+    val barcode: String = "",
+    val baseType: String = "",
+    val wheelType: String = "",
+    val photoUrl: String = "",
+    val folderPath: String = "",
+    val isPremium: Boolean = false,
+    val isSTH: Boolean = false,
+    val isTH: Boolean = false,
+    val isFirstEdition: Boolean = false,
+    val timestamp: Long = 0L,
+    val frontPhotoPath: String = "",
+    val backPhotoPath: String = "",
+    val combinedPhotoPath: String = "",
+    val notes: String = "",
+    val purchaseDate: String = "",
+    val purchasePrice: Double = 0.0,
+    val purchaseLocation: String = "",
+    val condition: String = "",
+    val packageCondition: String = "",
+    val estimatedValue: Double = 0.0,
+    val lastPriceCheck: String = "",
+    /* keywords → fast text search & barcode search */
+    val searchKeywords: List<String> = emptyList()
+)

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Professional Automotive Background Gradient -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108"
+                android:type="linear"
+                android:angle="135">
+                <item
+                    android:color="#FF263238"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF37474F"
+                    android:offset="0.5" />
+                <item
+                    android:color="#FF455A64"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Subtle Grid Pattern (Like garage floor) -->
+    <path
+        android:fillColor="#1A000000"
+        android:pathData="M0,18L108,18L108,19L0,19Z M0,36L108,36L108,37L0,37Z M0,54L108,54L108,55L0,55Z M0,72L108,72L108,73L0,73Z M0,90L108,90L108,91L0,91Z" />
+    <path
+        android:fillColor="#1A000000"
+        android:pathData="M18,0L19,0L19,108L18,108Z M36,0L37,0L37,108L36,108Z M54,0L55,0L55,108L54,108Z M72,0L73,0L73,108L72,108Z M90,0L91,0L91,108L90,108Z" />
+
+    <!-- Automotive Accent Elements -->
+    <path
+        android:fillColor="#1A1976D2"
+        android:pathData="M0,20L108,20L108,24L0,24Z" />
+    <path
+        android:fillColor="#1A1976D2"
+        android:pathData="M0,84L108,84L108,88L0,88Z" />
+
+    <!-- Corner Design Elements -->
+    <path
+        android:fillColor="#0D1976D2"
+        android:pathData="M0,0L20,0L20,20L0,20Z" />
+    <path
+        android:fillColor="#0D1976D2"
+        android:pathData="M88,0L108,0L108,20L88,20Z" />
+    <path
+        android:fillColor="#0D1976D2"
+        android:pathData="M0,88L20,88L20,108L0,108Z" />
+    <path
+        android:fillColor="#0D1976D2"
+        android:pathData="M88,88L108,88L108,108L88,108Z" />
+
+</vector>

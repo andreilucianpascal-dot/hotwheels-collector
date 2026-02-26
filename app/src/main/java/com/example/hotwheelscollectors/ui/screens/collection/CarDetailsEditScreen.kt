@@ -170,7 +170,7 @@ fun CarDetailsEditScreen(
     }
     
     val allYears = remember {
-        (1968..2024).reversed().map { it.toString() }
+        (1968..2100).reversed().map { it.toString() }
     }
     
     val allColors = remember {

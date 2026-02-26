@@ -67,12 +67,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
 
         // Suppress common Kotlin warnings
         freeCompilerArgs += listOf(
@@ -199,6 +199,8 @@ dependencies {
     // --- Google Drive SDK ---
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("com.google.api-client:google-api-client-android:1.34.0")
+    implementation("com.google.api-client:google-api-client-gson:1.34.0")
+    implementation("com.google.http-client:google-http-client-android:1.42.3")
     implementation("com.google.apis:google-api-services-drive:v3-rev136-1.25.0")
 
     // --- Dropbox SDK ---
@@ -330,6 +332,16 @@ dependencies {
 
     // ---------- Image Processing ----------
     implementation("androidx.exifinterface:exifinterface:1.3.6")
+    
+    // ---------- TensorFlow Lite ----------
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")  // Optional - pentru GPU acceleration
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    
+    // ---------- OpenCV (Post-processing pentru TFLite masks) ----------
+    // OpenCV Android SDK - modul oficial importat
+    // NOTĂ: Modulul opencv trebuie să fie copiat în root-ul proiectului (vezi OPENCV_SETUP_PAS_CU_PAS.md)
+    implementation(project(":opencv"))
 
     // ---------- Permissions ----------
     implementation("com.google.accompanist:accompanist-permissions:0.35.0-alpha")

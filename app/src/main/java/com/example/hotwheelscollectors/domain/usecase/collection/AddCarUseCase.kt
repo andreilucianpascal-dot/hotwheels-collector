@@ -8,6 +8,7 @@ import com.example.hotwheelscollectors.data.repository.CarSyncRepository
 import com.example.hotwheelscollectors.data.repository.PhotoProcessingRepository
 import com.example.hotwheelscollectors.data.repository.UserStorageRepository
 import com.example.hotwheelscollectors.data.repository.FirestoreRepository
+import com.example.hotwheelscollectors.data.repository.UserCloudSyncRepository
 import com.example.hotwheelscollectors.data.local.dao.UserDao
 import com.example.hotwheelscollectors.data.local.dao.CarDao
 import com.example.hotwheelscollectors.data.local.entities.UserEntity
@@ -42,7 +43,8 @@ class AddCarUseCase @Inject constructor(
     private val authRepository: AuthRepository,
     private val userDao: UserDao,
     private val carDao: CarDao,
-    private val firestoreRepository: FirestoreRepository
+    private val firestoreRepository: FirestoreRepository,
+    private val userCloudSyncRepository: UserCloudSyncRepository
 ) {
     /**
      * Persistent CoroutineScope for background sync operations.
@@ -138,6 +140,21 @@ class AddCarUseCase @Inject constructor(
                 }
             }
             Log.i("AddCarUseCase", "✅ Car incremental sync initiated (non-blocking) - will appear in Browse after thumbnail upload")
+            
+            // Step 6: Update backup to cloud (background, non-blocking)
+            // ✅ CRITICAL: Launch backup sync in background WITHOUT blocking - return immediately!
+            applicationScope.launch {
+                try {
+                    userCloudSyncRepository.syncLatestBackup()
+                    Log.i("AddCarUseCase", "✅ Latest backup updated successfully")
+                } catch (e: Exception) {
+                    Log.w("AddCarUseCase", "⚠️ Backup sync failed: ${e.message}")
+                    // Don't fail the entire operation if backup sync fails
+                    // Car is still saved locally and will appear in My Collection
+                    // Backup can be retried later via WorkManager
+                }
+            }
+            Log.i("AddCarUseCase", "✅ Latest backup sync initiated (non-blocking)")
             
             // ✅ CRITICAL: Return Success IMMEDIATELY after local save
             // Navigation happens instantly, sync continues in background

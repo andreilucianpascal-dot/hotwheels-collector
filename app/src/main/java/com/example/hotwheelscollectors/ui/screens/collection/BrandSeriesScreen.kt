@@ -145,7 +145,8 @@ fun BrandSeriesScreen(
                             onMenuClick = { 
                                 navController.navigate("edit_car/${car.id}")
                             },
-                            onCardClick = { navController.navigate("car_details/${car.id}") }
+                            onCardClick = { navController.navigate("car_details/${car.id}") },
+                            navController = navController
                         )
                     }
                 }

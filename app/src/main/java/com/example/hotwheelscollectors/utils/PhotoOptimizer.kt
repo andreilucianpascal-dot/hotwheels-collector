@@ -99,19 +99,20 @@ class PhotoOptimizer @Inject constructor(private val context: Context) {
         outputDir: File,
         filename: String
     ): String {
-        val croppedBitmap = cropCenter(originalBitmap, 400, 300)
+        // ✅ FIX: Use resize instead of crop to preserve aspect ratio (no cropping)
+        val resizedBitmap = resizeBitmap(originalBitmap, THUMBNAIL_WIDTH)
         try {
             val thumbnailFile = File(outputDir, "$filename.jpg")
             
-            val thumbnailBytes = compressToTargetSize(croppedBitmap, MAX_FILE_SIZE_KB)
+            val thumbnailBytes = compressToTargetSize(resizedBitmap, MAX_FILE_SIZE_KB)
             FileOutputStream(thumbnailFile).use { it.write(thumbnailBytes) }
             
-            Log.d("PhotoOptimizer", "Thumbnail created: ${thumbnailFile.length() / 1024}KB")
+            Log.d("PhotoOptimizer", "Thumbnail created: ${thumbnailFile.length() / 1024}KB (${resizedBitmap.width}x${resizedBitmap.height})")
             return thumbnailFile.absolutePath
         } finally {
-            if (!croppedBitmap.isRecycled) {
-                croppedBitmap.recycle()
-                Log.d("PhotoOptimizer", "Cropped bitmap for thumbnail recycled safely")
+            if (!resizedBitmap.isRecycled) {
+                resizedBitmap.recycle()
+                Log.d("PhotoOptimizer", "Resized bitmap for thumbnail recycled safely")
             }
         }
     }

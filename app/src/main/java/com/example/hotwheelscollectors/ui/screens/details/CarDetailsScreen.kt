@@ -1,4 +1,4 @@
-package com.example.hotwheelscollectors.ui.screens.details
+﻿package com.example.hotwheelscollectors.ui.screens.details
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,6 +29,9 @@ import com.example.hotwheelscollectors.data.local.entities.CarEntity
 import com.example.hotwheelscollectors.ui.components.loading.LoadingScreen
 import com.example.hotwheelscollectors.ui.components.error.ErrorScreen
 import com.example.hotwheelscollectors.viewmodels.CarDetailsViewModel
+import com.example.hotwheelscollectors.utils.PriceSearchHelper
+import android.content.Intent
+import java.util.Currency
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -48,6 +51,7 @@ fun CarDetailsScreen(
     var showBrandDialog by remember { mutableStateOf(false) }
     var showYearDropdown by remember { mutableStateOf(false) }
     var showColorDropdown by remember { mutableStateOf(false) }
+    var showPurchasePriceDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(carId) {
         viewModel.loadCar(carId)
@@ -120,12 +124,16 @@ fun CarDetailsScreen(
                         car = car,
                         contentPadding = PaddingValues(0.dp),
                         onPhotoClick = { photoIndex ->
-                            navController.navigate("photo_viewer/${car.id}/$photoIndex")
+                            val photos = listOfNotNull(car.frontPhotoPath, car.combinedPhotoPath).filter { it.isNotEmpty() }
+                            val photoUri = photos.getOrNull(photoIndex) ?: photos.firstOrNull().orEmpty()
+                            val encodedUri = java.net.URLEncoder.encode(photoUri, "UTF-8")
+                            navController.navigate("full_photo_view/${car.id}/$encodedUri")
                         },
                         onModelEditClick = { showModelDropdown = true },
                         onBrandEditClick = { showBrandDialog = true },
                         onYearEditClick = { showYearDropdown = true },
-                        onColorEditClick = { showColorDropdown = true }
+                        onColorEditClick = { showColorDropdown = true },
+                        onPurchasePriceEditClick = { showPurchasePriceDialog = true }
                     )
 
                     // Model Dropdown Dialog
@@ -173,6 +181,18 @@ fun CarDetailsScreen(
                                 showColorDropdown = false
                             },
                             onDismiss = { showColorDropdown = false }
+                        )
+                    }
+
+                    if (showPurchasePriceDialog) {
+                        PurchasePriceDialog(
+                            currentPrice = car.purchasePrice,
+                            currentCurrency = car.purchaseCurrency,
+                            onSave = { newPrice ->
+                                viewModel.updatePurchaseInfo(car.id, newPrice.price, newPrice.currency)
+                                showPurchasePriceDialog = false
+                            },
+                            onDismiss = { showPurchasePriceDialog = false }
                         )
                     }
                 }
@@ -270,6 +290,7 @@ private fun CarDetails(
     onBrandEditClick: () -> Unit,
     onYearEditClick: () -> Unit,
     onColorEditClick: () -> Unit,
+    onPurchasePriceEditClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isBrandEditable = car.isPremium || car.isTH || car.isSTH || !car.series.equals("Mainline", ignoreCase = true)
@@ -324,12 +345,43 @@ private fun CarDetails(
                                             shape = CircleShape
                                         )
                                 )
-                            }
-                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun CheckPricesButton(
+    car: CarEntity,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    
+    Button(
+        onClick = {
+            val intent = com.example.hotwheelscollectors.utils.PriceSearchHelper.getGoogleShoppingIntent(car)
+            context.startActivity(intent)
+        },
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.tertiary,
+            contentColor = MaterialTheme.colorScheme.onTertiary
+        )
+    ) {
+        Icon(
+            imageVector = Icons.Default.AttachMoney,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "Check Prices",
+            style = MaterialTheme.typography.titleMedium
+        )
+    }
+}
 
         item {
             Column(
@@ -353,14 +405,6 @@ private fun CarDetails(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (isBrandEditable) {
-                        EditableChip(
-                            label = if (car.brand.isNotEmpty()) car.brand else "Add Brand",
-                            icon = Icons.Default.Label,
-                            onEditClick = onBrandEditClick
-                        )
-                    }
-
                     if (car.number.isNotEmpty()) {
                         Chip(
                             label = "#${car.number}",
@@ -446,6 +490,21 @@ private fun CarDetails(
                             value = car.barcode
                         )
                     }
+
+                    EditableDetailItem(
+                        label = "Price you paid",
+                        value = if (car.purchasePrice > 0.0) {
+                            val currency = car.purchaseCurrency.ifBlank {
+                                runCatching { Currency.getInstance(Locale.getDefault()).currencyCode }.getOrDefault("")
+                            }
+                            if (currency.isNotBlank()) {
+                                "${String.format(Locale.getDefault(), "%.2f", car.purchasePrice)} $currency"
+                            } else {
+                                String.format(Locale.getDefault(), "%.2f", car.purchasePrice)
+                            }
+                        } else "Add price",
+                        onEditClick = onPurchasePriceEditClick
+                    )
                 }
             }
         }
@@ -472,8 +531,111 @@ private fun CarDetails(
                 }
             }
         }
+
+        // Check Prices button
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                CheckPricesButton(
+                    car = car,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
     }
 }
+
+@Composable
+private fun PurchasePriceDialog(
+    currentPrice: Double,
+    currentCurrency: String,
+    onSave: (PurchasePriceInput) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var input by remember(currentPrice) {
+        mutableStateOf(if (currentPrice > 0.0) String.format(Locale.getDefault(), "%.2f", currentPrice) else "")
+    }
+    val defaultCurrency = remember {
+        runCatching { Currency.getInstance(Locale.getDefault()).currencyCode }.getOrDefault("EUR")
+    }
+    var selectedCurrency by remember(currentCurrency) {
+        mutableStateOf(currentCurrency.ifBlank { defaultCurrency })
+    }
+    var currencyExpanded by remember { mutableStateOf(false) }
+    val currencies = remember {
+        listOf("RON", "EUR", "GBP", "USD", "CHF", "PLN", "HUF", "CZK", "SEK", "NOK", "DKK", "BGN", "TRY", "UAH", "CAD", "AUD")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Price you paid") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = { Text("Purchase price") },
+                    placeholder = { Text("e.g. 2.99") },
+                    singleLine = true
+                )
+
+                @OptIn(ExperimentalMaterial3Api::class)
+                ExposedDropdownMenuBox(
+                    expanded = currencyExpanded,
+                    onExpandedChange = { currencyExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedCurrency,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Currency") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyExpanded) },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = currencyExpanded,
+                        onDismissRequest = { currencyExpanded = false }
+                    ) {
+                        currencies.forEach { code ->
+                            DropdownMenuItem(
+                                text = { Text(code) },
+                                onClick = {
+                                    selectedCurrency = code
+                                    currencyExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val parsed = input.replace(",", ".").toDoubleOrNull() ?: 0.0
+                    onSave(PurchasePriceInput(price = parsed, currency = selectedCurrency))
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+private data class PurchasePriceInput(
+    val price: Double,
+    val currency: String
+)
 
 @Composable
 private fun DetailSection(
@@ -1372,7 +1534,7 @@ private fun YearDropdownDialog(
     onDismiss: () -> Unit
 ) {
     val years = remember {
-        (1968..2024).toList().reversed() // Die-cast cars started being mass produced in 1968
+        (1968..2100).toList().reversed() // Die-cast cars started being mass produced in 1968
     }
 
     AlertDialog(
@@ -1529,3 +1691,4 @@ private fun ColorDropdownDialog(
         }
     )
 }
+

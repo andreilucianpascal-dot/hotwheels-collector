@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -58,7 +59,7 @@ fun LoginScreen(
     // Google Sign-In setup
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken("642654173253-73qnpvdu29l0knf1u2smrpdl6fvv1bn2.apps.googleusercontent.com")
+            .requestIdToken(context.getString(R.string.default_web_client_id))
             .requestEmail()
             .build()
     }
@@ -81,23 +82,22 @@ fun LoginScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        viewModel.authState.collect { state ->
-            when (state) {
-                is AuthState.Success -> {
-                    navController.navigate("main") {
-                        popUpTo("welcome") { inclusive = true }
-                    }
+    val authState by viewModel.authState.collectAsStateWithLifecycle()
+    
+    LaunchedEffect(authState) {
+        when (val state = authState) {
+            is AuthState.Success -> {
+                navController.navigate("main") {
+                    popUpTo("welcome") { inclusive = true }
                 }
-                is AuthState.Error -> {
-                    isLoading = false
-                    snackbarHostState.showSnackbar(
-                        message = state.message
-                    )
-                }
-
-                else -> {}
             }
+            is AuthState.Error -> {
+                isLoading = false
+                snackbarHostState.showSnackbar(
+                    message = state.message
+                )
+            }
+            else -> {}
         }
     }
 

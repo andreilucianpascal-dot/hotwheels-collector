@@ -1,4 +1,4 @@
-package com.example.hotwheelscollectors.viewmodels
+﻿package com.example.hotwheelscollectors.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -80,11 +80,16 @@ class CollectionViewModel @Inject constructor(
             android.util.Log.d("CollectionViewModel", "No user ID, returning empty list")
             flowOf(emptyList())
         }
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    }
+        .distinctUntilChanged()
+        .onEach { cars ->
+            android.util.Log.d("CollectionViewModel", "localCars emitted: ${cars.size}")
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyList()
+        )
 
     val collectionStats = _currentUserId.flatMapLatest { userId ->
         if (userId.isNotEmpty()) {

@@ -13,10 +13,12 @@ import com.example.hotwheelscollectors.ui.screens.auth.WelcomeScreen
 import com.example.hotwheelscollectors.ui.screens.add.AddMainlineScreen
 import com.example.hotwheelscollectors.ui.screens.add.AddOthersScreen
 import com.example.hotwheelscollectors.ui.screens.add.AddPremiumScreen
+import com.example.hotwheelscollectors.ui.screens.add.AddSilverSeriesScreen
 import com.example.hotwheelscollectors.ui.screens.add.AddTreasureHuntScreen
 import com.example.hotwheelscollectors.ui.screens.add.AddSuperTreasureHuntScreen
 import com.example.hotwheelscollectors.ui.screens.browse.BrowseMainlinesScreen
 import com.example.hotwheelscollectors.ui.screens.browse.BrowsePremiumScreen
+import com.example.hotwheelscollectors.ui.screens.browse.BrowseSilverSeriesScreen
 import com.example.hotwheelscollectors.ui.screens.browse.BrowseTreasureHuntScreen
 import com.example.hotwheelscollectors.ui.screens.browse.BrowseSuperTreasureHuntScreen
 import com.example.hotwheelscollectors.ui.screens.browse.BrowseOthersScreen
@@ -30,6 +32,8 @@ import com.example.hotwheelscollectors.ui.screens.collection.MainlinesScreen
 import com.example.hotwheelscollectors.ui.screens.collection.MainlineBrandsScreen
 import com.example.hotwheelscollectors.ui.screens.collection.OthersScreen
 import com.example.hotwheelscollectors.ui.screens.collection.PremiumScreen
+import com.example.hotwheelscollectors.ui.screens.collection.SilverSeriesScreen
+import com.example.hotwheelscollectors.ui.screens.collection.SilverSeriesCarsScreen
 import com.example.hotwheelscollectors.ui.screens.collection.PremiumCategoriesScreen
 import com.example.hotwheelscollectors.ui.screens.collection.PremiumSubcategoriesScreen
 import com.example.hotwheelscollectors.ui.screens.collection.PremiumCarsScreen
@@ -71,6 +75,14 @@ fun NavGraph(navController: NavHostController) {
         composable("collection") { CollectionScreen(navController) }
         composable("mainline") { MainlinesScreen(navController) }
         composable("premium") { PremiumScreen(navController) }
+        composable("silver_series") { SilverSeriesScreen(navController) }
+        composable(
+            route = "silver_series_cars/{subseriesId}",
+            arguments = listOf(navArgument("subseriesId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val subseriesId = backStackEntry.arguments?.getString("subseriesId") ?: ""
+            SilverSeriesCarsScreen(navController = navController, subseriesId = subseriesId)
+        }
         composable("others") { OthersScreen(navController) }
         
         // Premium navigation
@@ -111,6 +123,7 @@ fun NavGraph(navController: NavHostController) {
         ) { backStackEntry ->
             AddPremiumScreen(navController)
         }
+        composable("add_silver_series") { AddSilverSeriesScreen(navController) }
         composable("add_others") { AddOthersScreen(navController) }
         composable("add_treasure_hunt") { AddTreasureHuntScreen(navController) }
         composable("add_super_treasure_hunt") { AddSuperTreasureHuntScreen(navController) }
@@ -163,6 +176,7 @@ fun NavGraph(navController: NavHostController) {
         // Browse Global Database
         composable("browse_mainlines") { BrowseMainlinesScreen(navController) }
         composable("browse_premium") { BrowsePremiumScreen(navController) }
+        composable("browse_silver_series") { BrowseSilverSeriesScreen(navController) }
         composable("browse_treasure_hunt") { BrowseTreasureHuntScreen(navController) }
         composable("browse_super_treasure_hunt") { BrowseSuperTreasureHuntScreen(navController) }
         composable("browse_others") { BrowseOthersScreen(navController) }
@@ -207,6 +221,7 @@ fun NavGraph(navController: NavHostController) {
 
         composable("barcode_scanner") {
             BarcodeScannerScreen(
+                navController = navController,
                 onBarcodeScanned = { barcode ->
                     navController.previousBackStackEntry
                         ?.savedStateHandle
@@ -234,12 +249,27 @@ fun NavGraph(navController: NavHostController) {
                 navController = navController
             )
         }
+        
+        // Full Photo View (full immersive)
+        composable(
+            route = "full_photo_view/{carId}/{photoUri}",
+            arguments = listOf(
+                navArgument("carId") { type = NavType.StringType },
+                navArgument("photoUri") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            com.example.hotwheelscollectors.ui.screens.details.FullPhotoViewScreen(
+                photoUri = backStackEntry.arguments?.getString("photoUri") ?: "",
+                carId = backStackEntry.arguments?.getString("carId") ?: "",
+                navController = navController
+            )
+        }
 
         // Search
         composable("search") { SearchDatabaseScreen(navController) }
 
         // Settings
-        composable("settings") { SettingsScreen(onNavigateBack = { navController.navigateUp() }) }
+        composable("settings") { SettingsScreen(onNavigateBack = { navController.navigateUp() }, navController = navController) }
         composable("storage_settings") { StorageSettingsScreen(navController, onGoogleSignIn = {}) }
         composable("theme_settings") { ThemeSettingsScreen(navController) }
         composable("language_settings") { 

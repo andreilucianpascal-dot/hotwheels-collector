@@ -72,6 +72,9 @@ data class CarEntity(
 
     val purchasePrice: Double = 0.0,
 
+    // ISO 4217 currency code for purchasePrice (e.g., RON, EUR, GBP)
+    val purchaseCurrency: String = "",
+
     val currentValue: Double = 0.0,
 
     val notes: String = "",
@@ -120,5 +123,10 @@ data class CarEntity(
 
     // Sync priority (100 = highest, 0 = lowest)
     val syncPriority: Int = 100,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    
+    // ✅ Browse duplicate prevention: Firebase URL of original photo from Browse
+    // Used to prevent adding the same car from Browse multiple times
+    // null for cars added via Take Photos (not from Browse)
+    val originalBrowsePhotoUrl: String? = null
 )

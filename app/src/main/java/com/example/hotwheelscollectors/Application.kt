@@ -11,12 +11,39 @@ import javax.inject.Inject
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import timber.log.Timber
+import com.example.hotwheelscollectors.data.repository.UserCloudSyncManager
+// ✅ REMOVED: Application should NOT import data layer classes
+// - UserCloudRestoreManager (data logic)
+// - GoogleDriveAuthService (data logic)
+// - UserPreferences (data logic)
+// - CarDao (data layer)
+// - PersonalStorageType (storage logic)
+//
+// Storage logic is now in StorageOrchestrator (called from ViewModels)
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 @HiltAndroidApp
 class HotWheelsCollectorsApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject
+    lateinit var userCloudSyncManager: UserCloudSyncManager
+    
+    // ✅ REMOVED: Application should NOT have data layer dependencies
+    // - userCloudRestoreManager (data logic)
+    // - googleDriveAuthService (data logic)
+    // - googleDriveRepository (data logic)
+    // - userPreferences (data logic)
+    // - carDao (data layer)
+    // 
+    // Storage logic is now handled by StorageOrchestrator,
+    // which is called from MainViewModel.onAppStart() (UI layer)
+    
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -57,6 +84,9 @@ class HotWheelsCollectorsApplication : Application(), Configuration.Provider {
 
             // Initialize database
             initializeDatabase()
+
+            // Initialize OpenCV (pentru post-procesare măști TFLite)
+            initializeOpenCV()
 
             // Initialize background work
             initializeBackgroundWork()
@@ -165,14 +195,36 @@ class HotWheelsCollectorsApplication : Application(), Configuration.Provider {
         }
     }
 
+    private fun initializeOpenCV() {
+        // OpenCV DEZACTIVAT - nu mai folosim procesare complexă
+        // try {
+        //     // Initialize OpenCV pentru post-procesare măști TFLite
+        //     com.example.hotwheelscollectors.domain.manager.OpenCVMaskProcessor.initialize(this)
+        //     Timber.d("OpenCV initialization attempted")
+        // } catch (e: Exception) {
+        //     Timber.e(e, "Failed to initialize OpenCV - mask refinement will be disabled")
+        // }
+    }
+
     private fun initializeBackgroundWork() {
         try {
+            // Initialize user cloud sync manager for periodic background sync
+            // UserCloudSyncManager will automatically schedule periodic sync in its init block
+            userCloudSyncManager.initializeBackgroundSync()
+            Timber.d("User cloud sync manager initialized")
+            
             // Initialize sync manager for background work
             // Initialize sync manager (simplified)
             Timber.d("Sync manager initialized")
             
             // Initialize offline manager (simplified)
             Timber.d("Offline manager initialized")
+            
+            // ✅ REMOVED: checkAndRestoreFromCloud()
+            // Application should NOT handle storage logic.
+            // Storage operations are now handled by StorageOrchestrator,
+            // which is called from MainViewModel.onAppStart() (UI layer)
+            // after user is authenticated and UI is ready.
             
             Timber.d("Background work initialized successfully")
         } catch (e: Exception) {

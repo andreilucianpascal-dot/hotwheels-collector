@@ -28,6 +28,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.example.hotwheelscollectors.R
 
 @Composable
 fun WelcomeScreen(navController: NavController) {
@@ -38,7 +39,7 @@ fun WelcomeScreen(navController: NavController) {
     // Google Sign-In setup
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken("642654173253-73qnpvdu29l0knf1u2smrpdl6fvv1bn2.apps.googleusercontent.com")
+            .requestIdToken(context.getString(R.string.default_web_client_id))
             .requestEmail()
             .build()
     }

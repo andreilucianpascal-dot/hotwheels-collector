@@ -397,8 +397,8 @@ private fun ColorSelectionDialog(
     onDismiss: () -> Unit
 ) {
     val colorCategories = mapOf(
-        "Normale" to listOf("Red", "Blue", "Green", "Yellow", "Orange", "Purple", "Black", "White", "Gray", "Brown"),
-        "Metalice" to listOf("Silver", "Gold", "Chrome", "Metallic Blue", "Metallic Red", "Metallic Green", "Metallic Silver", "Metallic Gold"),
+        "Normal" to listOf("Red", "Blue", "Green", "Yellow", "Orange", "Purple", "Black", "White", "Gray", "Brown"),
+        "Metallic" to listOf("Silver", "Gold", "Chrome", "Metallic Blue", "Metallic Red", "Metallic Green", "Metallic Silver", "Metallic Gold"),
         "Special" to listOf("Pearl White", "Flat Black", "Matte Blue", "Satin Silver", "Candy Red", "Candy Blue")
     )
     
@@ -476,7 +476,7 @@ private fun YearSelectionDialog(
     onYearSelected: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val years = (1968..2026).toList().reversed()
+    val years = (1968..2100).toList().reversed()
     
     Dialog(onDismissRequest = onDismiss) {
         Card(

@@ -4,6 +4,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -23,9 +25,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.example.hotwheelscollectors.R
 import com.example.hotwheelscollectors.data.local.entities.CarEntity
+import com.example.hotwheelscollectors.data.repository.GlobalCarData
 import com.example.hotwheelscollectors.viewmodels.SearchDatabaseViewModel
 import com.example.hotwheelscollectors.ui.components.LoadingState
 import com.example.hotwheelscollectors.ui.components.cards.CarSearchCard
+import com.example.hotwheelscollectors.ui.components.cards.BrowseCarSearchCard
 
 @Composable
 fun SearchDatabaseScreen(
@@ -79,17 +83,33 @@ fun SearchDatabaseScreen(
             }
             is SearchDatabaseViewModel.UiState.Success -> {
                 val results = (uiState as SearchDatabaseViewModel.UiState.Success).results
-                if (results.isEmpty()) {
+                // ✅ FIX: Show empty state when query is empty (not just when no results)
+                if (searchQuery.isBlank()) {
+                    EmptySearchState(
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                } else if (results.isEmpty()) {
                     EmptyResultsState(
                         query = searchQuery,
                         onClearSearch = viewModel::clearSearchQuery,
                         modifier = Modifier.padding(paddingValues)
                     )
                 } else {
-                    SearchResults(
+                    BrowseSearchResults(
                         results = results,
                         onResultClick = { car ->
-                            navController.navigate("car_details/${car.id}")
+                            // Navigate to appropriate Browse screen based on category
+                            val browseRoute = when {
+                                car.category.lowercase().contains("premium") -> "browse_premium"
+                                car.category.lowercase().contains("treasure") && car.category.lowercase().contains("super") -> "browse_super_treasure_hunt"
+                                car.category.lowercase().contains("treasure") -> "browse_treasure_hunt"
+                                car.series.lowercase().contains("silver series") || car.category.lowercase().contains("silver series") -> "browse_silver_series"
+                                car.category.lowercase().contains("other") || car.series.lowercase() == "others" -> "browse_others"
+                                else -> "browse_mainlines"
+                            }
+                            // Pass barcode to filter
+                            navController.currentBackStackEntry?.savedStateHandle?.set("search_barcode", car.barcode)
+                            navController.navigate(browseRoute)
                         },
                         contentPadding = paddingValues
                     )
@@ -134,6 +154,72 @@ private fun SearchResults(
                 onClick = { onResultClick(car) }
             )
         }
+    }
+}
+
+@Composable
+private fun BrowseSearchResults(
+    results: List<GlobalCarData>,
+    onResultClick: (GlobalCarData) -> Unit,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = contentPadding.calculateTopPadding(),
+            end = 16.dp,
+            bottom = contentPadding.calculateBottomPadding()
+        ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.fillMaxSize()
+    ) {
+        items(
+            items = results,
+            key = { "${it.barcode}-${it.carName}" }
+        ) { car ->
+            BrowseCarSearchCard(
+                car = car,
+                onClick = { onResultClick(car) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptySearchState(
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Search Global Database",
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Type to search for cars by name, brand, year, barcode, or series",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

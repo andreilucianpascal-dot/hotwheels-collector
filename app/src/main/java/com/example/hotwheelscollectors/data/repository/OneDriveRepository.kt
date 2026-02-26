@@ -11,6 +11,7 @@ import com.example.hotwheelscollectors.data.local.entities.SyncStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.*
 import javax.inject.Inject
 
@@ -101,5 +102,21 @@ class OneDriveRepository @Inject constructor(
     suspend fun uploadPhoto(localPath: String, barcode: String, photoType: PhotoType): String {
         Log.w("OneDriveRepository", "OneDrive upload not yet implemented - using local path")
         return localPath
+    }
+    
+    /**
+     * Generic file upload method for syncing backup files (JSON, photos, etc.) to OneDrive.
+     * Used by UserCloudSyncRepository for automatic cloud sync.
+     * 
+     * @param file The file to upload
+     * @param folderPath The folder path in OneDrive (e.g., "HotWheelsCollectors/database" or "HotWheelsCollectors/photos")
+     * @param fileName The name for the file in OneDrive
+     * @return Result containing the OneDrive file URL if successful, or error if failed
+     */
+    suspend fun uploadFile(file: File, folderPath: String, fileName: String): Result<String> = withContext(Dispatchers.IO) {
+        // TODO: Implement OneDrive API upload
+        // For now, return placeholder
+        Log.w("OneDriveRepository", "OneDrive uploadFile not yet implemented - returning placeholder")
+        Result.success("onedrive://$folderPath/$fileName")
     }
 }

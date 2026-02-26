@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "HotWheelsCollectors"
 include(":app")
+include(":opencv")  // OpenCV Android SDK - modul oficial

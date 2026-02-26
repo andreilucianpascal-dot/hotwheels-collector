@@ -4,6 +4,7 @@ package com.example.hotwheelscollectors.ui.screens.camera
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
@@ -26,18 +27,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.hotwheelscollectors.R
+import com.example.hotwheelscollectors.viewmodels.BarcodeScannerViewModel
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 @Composable
 fun BarcodeScannerScreen(
+    navController: androidx.navigation.NavController,
     onBarcodeScanned: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    viewModel: BarcodeScannerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    val foundCar by viewModel.foundCar.collectAsState()
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val previewView = remember { PreviewView(context) }
     val barcodeScanner = remember { BarcodeScanning.getClient() }
@@ -67,6 +75,72 @@ fun BarcodeScannerScreen(
     var isProcessingBarcode by remember { mutableStateOf(false) }
     var scanError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    
+    val searchResult by viewModel.searchResult.collectAsState()
+    var showNotFoundDialog by remember { mutableStateOf(false) }
+    var scannedBarcode by remember { mutableStateOf<String?>(null) }
+
+    // Handle search result navigation
+    LaunchedEffect(searchResult) {
+        when (val result = searchResult) {
+            is BarcodeScannerViewModel.BarcodeSearchResult.LocalCar -> {
+                // ✅ Found in My Collection - navigate to CarDetailsScreen
+                Log.d("BarcodeScannerScreen", "Navigating to My Collection car: ${result.car.id}")
+                navController.navigate("car_details/${result.car.id}") {
+                    popUpTo("barcode_scanner") { inclusive = true }
+                }
+            }
+            is BarcodeScannerViewModel.BarcodeSearchResult.GlobalCar -> {
+                // ✅ Found in Browse - navigate to Browse screen
+                val globalCar = result.car
+                val browseRoute = when {
+                    globalCar.category.lowercase().contains("premium") -> "browse_premium"
+                    globalCar.category.lowercase().contains("treasure") && globalCar.category.lowercase().contains("super") -> "browse_super_treasure_hunt"
+                    globalCar.category.lowercase().contains("treasure") -> "browse_treasure_hunt"
+                    globalCar.series.lowercase().contains("silver series") || globalCar.category.lowercase().contains("silver series") -> "browse_silver_series"
+                    globalCar.category.lowercase().contains("other") || globalCar.series.lowercase() == "others" -> "browse_others"
+                    else -> "browse_mainlines"
+                }
+                // Set barcode in savedStateHandle for filtering
+                navController.currentBackStackEntry?.savedStateHandle?.set("search_barcode", globalCar.barcode)
+                navController.navigate(browseRoute) {
+                    popUpTo("barcode_scanner") { inclusive = true }
+                }
+            }
+            is BarcodeScannerViewModel.BarcodeSearchResult.NotFound -> {
+                // ❌ Not found - show dialog
+                scannedBarcode = null // Will be set when barcode is scanned
+                showNotFoundDialog = true
+            }
+            null -> {
+                // No result yet - do nothing
+            }
+            else -> {
+                // Exhaustive when - no other cases
+            }
+        }
+    }
+
+    // Legacy support - handle foundCar for backward compatibility
+    LaunchedEffect(foundCar) {
+        foundCar?.let { globalCar ->
+            // Only navigate if searchResult is null (backward compatibility)
+            if (searchResult == null) {
+                val browseRoute = when {
+                    globalCar.category.lowercase().contains("premium") -> "browse_premium"
+                    globalCar.category.lowercase().contains("treasure") && globalCar.category.lowercase().contains("super") -> "browse_super_treasure_hunt"
+                    globalCar.category.lowercase().contains("treasure") -> "browse_treasure_hunt"
+                    globalCar.series.lowercase().contains("silver series") || globalCar.category.lowercase().contains("silver series") -> "browse_silver_series"
+                    globalCar.category.lowercase().contains("other") || globalCar.series.lowercase() == "others" -> "browse_others"
+                    else -> "browse_mainlines"
+                }
+                navController.currentBackStackEntry?.savedStateHandle?.set("search_barcode", globalCar.barcode)
+                navController.navigate(browseRoute) {
+                    popUpTo("barcode_scanner") { inclusive = true }
+                }
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         try {
@@ -93,7 +167,9 @@ fun BarcodeScannerScreen(
                                     .addOnSuccessListener { barcodes ->
                                         if (barcodes.isNotEmpty()) {
                                             barcodes[0].rawValue?.let { barcode ->
-                                                onBarcodeScanned(barcode)
+                                                scannedBarcode = barcode
+                                                // Search in both local collection and global database
+                                                viewModel.searchBarcode(barcode)
                                             }
                                         }
                                     }
@@ -260,7 +336,61 @@ fun BarcodeScannerScreen(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
+
+        // Dialog for "Car Not Found"
+        if (showNotFoundDialog) {
+            CarNotFoundDialog(
+                barcode = scannedBarcode ?: "",
+                onAddManually = {
+                    showNotFoundDialog = false
+                    // Navigate to category selection for adding new car
+                    navController.navigate("category_selection") {
+                        popUpTo("barcode_scanner") { inclusive = true }
+                    }
+                },
+                onDismiss = {
+                    showNotFoundDialog = false
+                    scannedBarcode = null
+                }
+            )
+        }
     }
+}
+
+@Composable
+private fun CarNotFoundDialog(
+    barcode: String,
+    onAddManually: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Mașină necunoscută")
+        },
+        text = {
+            Column {
+                Text("Barcode: $barcode")
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Nu am găsit această mașină în baza de date.")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Vrei să o adaugi manual?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onAddManually) {
+                Text("Adaugă manual")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Anulează")
+            }
+        }
+    )
 }
 
 @Composable

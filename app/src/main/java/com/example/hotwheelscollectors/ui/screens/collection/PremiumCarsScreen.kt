@@ -23,6 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import android.net.Uri
 import com.example.hotwheelscollectors.data.local.entities.CarEntity
 import com.example.hotwheelscollectors.domain.catalog.BrandCatalog
 import com.example.hotwheelscollectors.viewmodels.CollectionViewModel
@@ -152,6 +153,7 @@ fun PremiumCarsScreen(
                 items(filteredCars) { car ->
                     PremiumCarCard(
                         car = car,
+                        navController = navController,
                         onClick = {
                             navController.navigate("car_details/${car.id}")
                         }
@@ -285,6 +287,7 @@ private fun DeletePremiumCarDialog(
 @Composable
 private fun PremiumCarCard(
     car: CarEntity,
+    navController: NavController,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -317,8 +320,12 @@ private fun PremiumCarCard(
                             .build(),
                         contentDescription = "Car Thumbnail",
                         modifier = Modifier
-                            .size(80.dp)
+                            .size(180.dp)
                             .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                val photoUri = car.frontPhotoPath.ifEmpty { car.combinedPhotoPath }
+                                navController.navigate("full_photo_view/${car.id}/${Uri.encode(photoUri)}")
+                            }
                     )
                 }
             }

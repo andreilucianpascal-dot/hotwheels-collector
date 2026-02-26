@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import android.net.Uri
 import com.example.hotwheelscollectors.data.local.entities.CarWithPhotos
 import com.example.hotwheelscollectors.model.CarFilterState
 import com.example.hotwheelscollectors.model.SortState
@@ -37,6 +38,7 @@ import com.example.hotwheelscollectors.ui.components.*
 import com.example.hotwheelscollectors.viewmodels.OthersViewModel
 import kotlinx.coroutines.launch
 import java.io.File
+import com.example.hotwheelscollectors.ui.theme.HotWheelsThemeManager
 
 @Composable
 fun OthersScreen(
@@ -62,8 +64,24 @@ fun OthersScreen(
         viewModel.refresh()
     }
 
+    val themeState by com.example.hotwheelscollectors.viewmodels.AppThemeViewModel::class
+        .let { hiltViewModel<com.example.hotwheelscollectors.viewmodels.AppThemeViewModel>() }
+        .uiState
+        .collectAsStateWithLifecycle()
+    val bgTheme = HotWheelsThemeManager.getBackgroundTheme(themeState.colorScheme)
+
     Column(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = bgTheme?.secondaryGradient
+                    ?: androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+            )
     ) {
         OthersTopAppBar(
             selectedCount = selectedCars.size,
@@ -119,6 +137,7 @@ fun OthersScreen(
                                     onCarLongClick = { carWithPhotos ->
                                         viewModel.toggleCarSelection(carWithPhotos.car.id)
                                     },
+                                    navController = navController,
                                     contentPadding = PaddingValues(16.dp),
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -138,6 +157,7 @@ fun OthersScreen(
                                     onCarLongClick = { carWithPhotos ->
                                         viewModel.toggleCarSelection(carWithPhotos.car.id)
                                     },
+                                    navController = navController,
                                     contentPadding = PaddingValues(16.dp),
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -416,6 +436,7 @@ private fun OthersGrid(
     selectedCars: Set<String>,
     onCarClick: (CarWithPhotos) -> Unit,
     onCarLongClick: (CarWithPhotos) -> Unit,
+    navController: NavController,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier
 ) {
@@ -440,6 +461,7 @@ private fun OthersGrid(
                 isSelected = carWithPhotos.car.id in selectedCars,
                 onClick = { onCarClick(carWithPhotos) },
                 onLongClick = { onCarLongClick(carWithPhotos) },
+                navController = navController,
                 modifier = Modifier
             )
         }
@@ -452,6 +474,7 @@ private fun OthersList(
     selectedCars: Set<String>,
     onCarClick: (CarWithPhotos) -> Unit,
     onCarLongClick: (CarWithPhotos) -> Unit,
+    navController: NavController,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier
 ) {
@@ -468,6 +491,7 @@ private fun OthersList(
                 isSelected = carWithPhotos.car.id in selectedCars,
                 onClick = { onCarClick(carWithPhotos) },
                 onLongClick = { onCarLongClick(carWithPhotos) },
+                navController = navController,
                 modifier = Modifier
                     .fillMaxWidth()
             )
@@ -481,6 +505,7 @@ private fun OtherCarCard(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    navController: NavController,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -511,6 +536,11 @@ private fun OtherCarCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(1f)
+                            .clickable {
+                                // ✅ FIX: Correct parameter order: carId first, then photoUri
+                                val encodedUri = java.net.URLEncoder.encode(photoPath, "UTF-8")
+                                navController.navigate("full_photo_view/${car.car.id}/$encodedUri")
+                            }
                     )
                 } else {
                     Box(
@@ -601,6 +631,7 @@ private fun OtherCarListItem(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    navController: NavController,
     modifier: Modifier = Modifier
 ) {
     ListItem(
@@ -627,13 +658,18 @@ private fun OtherCarListItem(
                         contentDescription = "${car.car.brand} ${car.car.model}",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(180.dp)
                             .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                // ✅ FIX: Correct parameter order: carId first, then photoUri
+                                val encodedUri = java.net.URLEncoder.encode(photoPath, "UTF-8")
+                                navController.navigate("full_photo_view/${car.car.id}/$encodedUri")
+                            }
                     )
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(180.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
@@ -650,7 +686,7 @@ private fun OtherCarListItem(
                 if (isSelected) {
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(180.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)

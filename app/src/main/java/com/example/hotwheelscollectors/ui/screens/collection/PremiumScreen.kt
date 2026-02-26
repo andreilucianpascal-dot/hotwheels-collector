@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.example.hotwheelscollectors.ui.theme.HotWheelsThemeManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +40,12 @@ fun PremiumScreen(
         "HW Dream Garage"
     )
 
+    val themeState by com.example.hotwheelscollectors.viewmodels.AppThemeViewModel::class
+        .let { androidx.hilt.navigation.compose.hiltViewModel<com.example.hotwheelscollectors.viewmodels.AppThemeViewModel>() }
+        .uiState
+        .collectAsState()
+    val bgTheme = HotWheelsThemeManager.getBackgroundTheme(themeState.colorScheme)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -58,23 +65,36 @@ fun PremiumScreen(
             }
         }
     ) { paddingValues ->
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(premiumSeries) { series ->
-                PremiumSeriesCard(
-                    series = series,
-                    carCount = 0, // EMPTY - no cars inside
-                    onClick = { 
-                        // Do nothing - folders are empty
-                    }
+                .background(
+                    brush = bgTheme?.secondaryGradient
+                        ?: androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.background,
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
                 )
+                .padding(paddingValues)
+        ) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(premiumSeries) { series ->
+                    PremiumSeriesCard(
+                        series = series,
+                        carCount = 0, // EMPTY - no cars inside
+                        onClick = {
+                            // Do nothing - folders are empty
+                        }
+                    )
+                }
             }
         }
     }

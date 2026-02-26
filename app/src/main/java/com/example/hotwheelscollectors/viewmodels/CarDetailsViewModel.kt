@@ -5,9 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.example.hotwheelscollectors.data.local.dao.CarDao
 import com.example.hotwheelscollectors.data.local.dao.PhotoDao
 import com.example.hotwheelscollectors.data.local.dao.PriceHistoryDao
+import com.example.hotwheelscollectors.data.local.UserPreferences
 import com.example.hotwheelscollectors.data.local.entities.CarEntity
 import com.example.hotwheelscollectors.data.local.entities.CarWithPhotos
 import com.example.hotwheelscollectors.data.local.entities.PriceHistoryEntity
+import com.example.hotwheelscollectors.data.repository.GoogleDriveRepository
+import com.example.hotwheelscollectors.model.PersonalStorageType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -19,7 +22,9 @@ import javax.inject.Inject
 class CarDetailsViewModel @Inject constructor(
     private val carDao: CarDao,
     private val photoDao: PhotoDao,
-    private val priceHistoryDao: PriceHistoryDao
+    private val priceHistoryDao: PriceHistoryDao,
+    private val userPreferences: UserPreferences,
+    private val googleDriveRepository: GoogleDriveRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
@@ -32,6 +37,11 @@ class CarDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _uiState.value = UiState.Loading
+                // ✅ FIX: Add null check and error handling
+                if (carId.isBlank()) {
+                    _uiState.value = UiState.Error("Invalid car ID")
+                    return@launch
+                }
                 val carWithPhotos = carDao.getCarWithPhotosById(carId).first()
                 if (carWithPhotos != null) {
                     _uiState.value = UiState.Success(carWithPhotos)
@@ -40,6 +50,7 @@ class CarDetailsViewModel @Inject constructor(
                     _uiState.value = UiState.Error("Car not found")
                 }
             } catch (e: Exception) {
+                android.util.Log.e("CarDetailsViewModel", "Error loading car: ${e.message}", e)
                 _uiState.value = UiState.Error(e.message ?: "Failed to load car details")
             }
         }
@@ -57,6 +68,7 @@ class CarDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 carDao.updateCar(car)
+                persistToDriveIfPrimary(car)
                 loadCar(car.id)
             } catch (e: Exception) {
                 _uiState.value = UiState.Error(e.message ?: "Failed to update car")
@@ -87,6 +99,7 @@ class CarDetailsViewModel @Inject constructor(
                         updatedAt = System.currentTimeMillis()
                     )
                     carDao.updateCar(updatedCar)
+                    persistToDriveIfPrimary(updatedCar)
                     loadCar(carId) // Reload to show updated data
                 }
             } catch (e: Exception) {
@@ -106,6 +119,7 @@ class CarDetailsViewModel @Inject constructor(
                         updatedAt = System.currentTimeMillis()
                     )
                     carDao.updateCar(updatedCar)
+                    persistToDriveIfPrimary(updatedCar)
                     loadCar(carId) // Reload to show updated data
                 }
             } catch (e: Exception) {
@@ -125,6 +139,7 @@ class CarDetailsViewModel @Inject constructor(
                         updatedAt = System.currentTimeMillis()
                     )
                     carDao.updateCar(updatedCar)
+                    persistToDriveIfPrimary(updatedCar)
                     loadCar(carId) // Reload to show updated data
                 }
             } catch (e: Exception) {
@@ -144,10 +159,63 @@ class CarDetailsViewModel @Inject constructor(
                         updatedAt = System.currentTimeMillis()
                     )
                     carDao.updateCar(updatedCar)
+                    persistToDriveIfPrimary(updatedCar)
                     loadCar(carId)
                 }
             } catch (e: Exception) {
                 _uiState.value = UiState.Error(e.message ?: "Failed to update brand")
+            }
+        }
+    }
+
+    fun updatePurchasePrice(carId: String, newPurchasePrice: Double) {
+        viewModelScope.launch {
+            try {
+                val currentState = _uiState.value
+                if (currentState is UiState.Success) {
+                    val updatedCar = currentState.carWithPhotos.car.copy(
+                        purchasePrice = newPurchasePrice,
+                        lastModified = Date(),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    carDao.updateCar(updatedCar)
+                    persistToDriveIfPrimary(updatedCar)
+                    loadCar(carId)
+                }
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error(e.message ?: "Failed to update purchase price")
+            }
+        }
+    }
+
+    fun updatePurchaseInfo(carId: String, newPurchasePrice: Double, currencyCode: String) {
+        viewModelScope.launch {
+            try {
+                val currentState = _uiState.value
+                if (currentState is UiState.Success) {
+                    val updatedCar = currentState.carWithPhotos.car.copy(
+                        purchasePrice = newPurchasePrice,
+                        purchaseCurrency = currencyCode.trim().uppercase(),
+                        lastModified = Date(),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    carDao.updateCar(updatedCar)
+                    persistToDriveIfPrimary(updatedCar)
+                    loadCar(carId)
+                }
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error(e.message ?: "Failed to update purchase info")
+            }
+        }
+    }
+
+    private suspend fun persistToDriveIfPrimary(updatedCar: CarEntity) {
+        val storageType = userPreferences.storageType.first()
+        if (storageType == PersonalStorageType.GOOGLE_DRIVE) {
+            val r = googleDriveRepository.upsertCarInDbJsonIfDrivePrimary(updatedCar)
+            if (r.isFailure) {
+                // Make it visible: otherwise user thinks data is saved, but it will reset on next restart.
+                throw r.exceptionOrNull() ?: Exception("Failed to save changes to Google Drive")
             }
         }
     }

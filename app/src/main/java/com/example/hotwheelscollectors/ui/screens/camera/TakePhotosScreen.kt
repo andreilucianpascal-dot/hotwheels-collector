@@ -19,6 +19,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -122,6 +125,7 @@ fun TakePhotosScreen(
                     val carType = when {
                         returnRoute.contains("treasure_hunt") -> "treasure_hunt"
                         returnRoute.contains("super_treasure_hunt") -> "super_treasure_hunt"
+                        returnRoute.contains("silver_series") -> "silver_series"
                         returnRoute.contains("others") -> "others"
                         else -> null
                     }
@@ -539,6 +543,10 @@ private fun CategorySelectionStep(
                     PremiumCategoryGrid(onCategorySelected = onCategorySelected)
                 }
 
+                "take_photos/add_silver_series", "add_silver_series" -> {
+                    SilverSeriesCategoryGrid(onCategorySelected = onCategorySelected)
+                }
+
                 "take_photos/add_treasure_hunt", "add_treasure_hunt" -> {
                     // Show a simple button for treasure hunt instead of auto-selecting
                     Column(
@@ -746,6 +754,59 @@ private fun PremiumCategoryGrid(onCategorySelected: (String) -> Unit) {
         item {
             Text(
                 text = "🏆 Select Premium Category:",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+        items(categories) { category ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Button(
+                    onClick = { onCategorySelected(category.id) },
+                    modifier = Modifier.fillMaxSize(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = category.backgroundColor
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = category.title,
+                        color = category.textColor,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SilverSeriesCategoryGrid(onCategorySelected: (String) -> Unit) {
+    val categories = listOf(
+        CategoryOption("Hybrid Speed", "Hybrid Speed", Color(0xFFE8E8E8), Color(0xFF333333)),
+        CategoryOption("Compact Kings", "Compact Kings", Color(0xFFE8E8E8), Color(0xFF333333)),
+        CategoryOption("National Icons", "National Icons", Color(0xFFE8E8E8), Color(0xFF333333)),
+        CategoryOption("Pantone Assortment", "Pantone Assortment", Color(0xFFE8E8E8), Color(0xFF333333)),
+        CategoryOption("Vintage Club", "Vintage Club", Color(0xFFE8E8E8), Color(0xFF333333)),
+        CategoryOption("Salt Flat Racers", "Salt Flat Racers", Color(0xFFE8E8E8), Color(0xFF333333)),
+        CategoryOption("80th Anniversary Vehicle Set", "80th Anniversary Vehicle Set", Color(0xFFE8E8E8), Color(0xFF333333)),
+        CategoryOption("Fast & Furious", "Fast & Furious", Color(0xFFE8E8E8), Color(0xFF333333)),
+        CategoryOption("Mustang 60 Years", "Mustang 60 Years", Color(0xFFE8E8E8), Color(0xFF333333))
+    )
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        item {
+            Text(
+                text = "✨ Select Silver Series Category:",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -1072,7 +1133,9 @@ private fun ChooseFolderViewNew(
     var selectedSubcategory by remember { mutableStateOf<String?>(null) }
     
     val isPremium = returnRoute.contains("premium", ignoreCase = true)
+    val isSilverSeries = returnRoute.contains("silver_series", ignoreCase = true)
     android.util.Log.d("TakePhotosScreen", "isPremium: $isPremium")
+    android.util.Log.d("TakePhotosScreen", "isSilverSeries: $isSilverSeries")
     
     when (folderSelectionStep) {
         FolderSelectionStep.CATEGORY_SELECTION -> {
@@ -1091,6 +1154,9 @@ private fun ChooseFolderViewNew(
                         } else {
                             folderSelectionStep = FolderSelectionStep.CONFIRMATION
                         }
+                    } else if (isSilverSeries) {
+                        // Silver Series: Direct to confirmation (no brand/subcategory selection needed)
+                        folderSelectionStep = FolderSelectionStep.CONFIRMATION
                     } else if (categoryId in listOf("others", "treasure_hunt", "super_treasure_hunt")) {
                         // ✅ Others, TH, STH: Direct to Save Car (no brand selection needed)
                         folderSelectionStep = FolderSelectionStep.CONFIRMATION
@@ -1163,6 +1229,7 @@ private fun ChooseFolderViewNew(
                             val carType = when {
                                 returnRoute.contains("mainline") -> "mainline"
                                 returnRoute.contains("premium") -> "premium"
+                                returnRoute.contains("silver_series") -> "silver_series"
                                 returnRoute.contains("treasure_hunt") -> "treasure_hunt"
                                 returnRoute.contains("super_treasure_hunt") -> "super_treasure_hunt"
                                 returnRoute.contains("others") -> "others"
@@ -1221,6 +1288,17 @@ private fun CategorySelectionView(
                 CategoryOption("1:43 Scale", "1:43 Scale", Color(0xFF388E3C), Color.White),
                 CategoryOption("Others Premium", "Others Premium", Color(0xFF616161), Color.White)
             )
+            "add_silver_series", "take_photos/add_silver_series" -> listOf(
+                CategoryOption("Hybrid Speed", "Hybrid Speed", Color(0xFFE8E8E8), Color(0xFF333333)),
+                CategoryOption("Compact Kings", "Compact Kings", Color(0xFFE8E8E8), Color(0xFF333333)),
+                CategoryOption("National Icons", "National Icons", Color(0xFFE8E8E8), Color(0xFF333333)),
+                CategoryOption("Pantone Assortment", "Pantone Assortment", Color(0xFFE8E8E8), Color(0xFF333333)),
+                CategoryOption("Vintage Club", "Vintage Club", Color(0xFFE8E8E8), Color(0xFF333333)),
+                CategoryOption("Salt Flat Racers", "Salt Flat Racers", Color(0xFFE8E8E8), Color(0xFF333333)),
+                CategoryOption("80th Anniversary Vehicle Set", "80th Anniversary Vehicle Set", Color(0xFFE8E8E8), Color(0xFF333333)),
+                CategoryOption("Fast & Furious", "Fast & Furious", Color(0xFFE8E8E8), Color(0xFF333333)),
+                CategoryOption("Mustang 60 Years", "Mustang 60 Years", Color(0xFFE8E8E8), Color(0xFF333333))
+            )
             "add_mainline", "take_photos/add_mainline" -> listOf(
                 CategoryOption("rally", "Rally", Color.Black, Color.Red),
                 CategoryOption("hot_roads", "Hot Rods", Color(0xFFFF9800), Color.Black),
@@ -1276,24 +1354,10 @@ private fun BrandSelectionView(
     onBrandSelected: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    val brands = remember(categoryId) {
-        when (categoryId) {
-            "rally" -> listOf("subaru", "mitsubishi", "lancia", "peugeot", "citroen", "toyota", "ford", "audi", "volkswagen", "mazda", "bmw", "volvo", "datsun", "opel", "nissan").sortedBy { it }
-            "supercars" -> listOf("ferrari", "lamborghini", "maserati", "pagani", "bugatti", "mclaren", "koenigsegg", "aston_martin", "rimac", "lucid_air", "ford_gt", "mazda_787b", "automobili_pininfarina", "bentley", "porsche", "corvette").sortedBy { it }
-            "american_muscle" -> listOf("ford", "chevrolet", "dodge", "chrysler", "pontiac", "buick", "cadillac", "oldsmobile", "plymouth", "lincoln", "mercury", "camaro", "chevy", "corvette", "chevelle", "el_camino", "impala", "nova", "challenger", "charger", "super_bee", "mustang", "thunderbird", "cougar", "barracuda", "firebird", "gto").sortedBy { it }
-            "vans" -> listOf("ford", "chevrolet", "dodge", "chrysler", "toyota", "honda", "nissan", "volkswagen", "mercedes", "mercedes_benz").sortedBy { it }
-            "convertibles" -> listOf("ford", "chevrolet", "dodge", "chrysler", "pontiac", "buick", "cadillac", "oldsmobile", "plymouth", "lincoln", "mercury", "toyota", "honda", "nissan", "mazda", "subaru", "mitsubishi", "suzuki", "daihatsu", "lexus", "infiniti", "acura", "datsun", "bmw", "mercedes", "audi", "volkswagen", "porsche", "opel", "ferrari", "lamborghini", "maserati", "pagani", "bugatti", "fiat", "alfa_romeo", "lancia", "abarth", "peugeot", "renault", "citroen", "jaguar", "land_rover", "mini", "bentley", "aston_martin", "lotus", "mclaren", "volvo", "koenigsegg", "corvette").sortedBy { it }
-            "suv_trucks" -> listOf("hummer", "jeep", "ram", "gmc", "land_rover", "toyota", "honda", "nissan", "ford", "chevrolet", "dodge", "bmw", "mercedes", "mercedes_benz", "audi", "volkswagen", "porsche").sortedBy { it }
-            "motorcycle" -> listOf("honda", "yamaha", "kawasaki", "suzuki", "bmw", "ducati", "harley_davidson", "indian", "triumph").sortedBy { it }
-            "hot_roads" -> emptyList() // Hot Rods has no specific brands
-            "mainline" -> emptyList() // No fallback to toy brands
-            "premium" -> emptyList() // No fallback to toy brands
-            "others" -> emptyList() // No fallback to toy brands
-            "treasure_hunt" -> emptyList() // No fallback to toy brands
-            "super_treasure_hunt" -> emptyList() // No toy brands
-            else -> emptyList() // No fallback toy brands
-        }
-    }
+    // ✅ FIX: Use BrandCatalog instead of hardcoded lists (removes mercedes_benz)
+    val brands = com.example.hotwheelscollectors.domain.catalog.BrandCatalog
+        .getBrandsForCategory(categoryId)
+        .sortedBy { it.second }
     
     Column(
         modifier = Modifier
@@ -1309,15 +1373,15 @@ private fun BrandSelectionView(
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(brands) { brand ->
+            items(brands) { (brandId, brandName) ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onBrandSelected(brand) },
+                        .clickable { onBrandSelected(brandId) },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Text(
-                        text = brand.replaceFirstChar { it.uppercaseChar() },
+                        text = brandName,
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(16.dp)
                     )

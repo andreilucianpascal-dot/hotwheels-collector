@@ -116,7 +116,8 @@ class LocalRepository @Inject constructor(
                 syncStatus = SyncStatus.PENDING_UPLOAD,
                 photoUrl = permanentFull,
                 frontPhotoPath = permanentFull,
-                combinedPhotoPath = permanentThumbnail
+                combinedPhotoPath = permanentThumbnail,
+                originalBrowsePhotoUrl = data.originalBrowsePhotoUrl // ✅ Firebase URL from Browse (null for Take Photos)
             )
             
             // 🔍 DEBUG: Log CarEntity values before saving

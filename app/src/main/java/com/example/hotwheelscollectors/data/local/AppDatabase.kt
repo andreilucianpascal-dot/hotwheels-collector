@@ -15,14 +15,13 @@ import com.example.hotwheelscollectors.data.local.migrations.DatabaseMigrations
         UserEntity::class,
         CarEntity::class,
         PhotoEntity::class,
-        BackupMetadataEntity::class,
         PriceHistoryEntity::class,
         TradeOfferEntity::class,
         WishlistEntity::class,
         SearchHistoryEntity::class,
         SearchKeywordEntity::class
     ],
-    version = 4,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -32,7 +31,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun carDao(): CarDao
     abstract fun photoDao(): PhotoDao
-    abstract fun backupDao(): BackupDao
     abstract fun priceHistoryDao(): PriceHistoryDao
     abstract fun tradeDao(): TradeDao
     abstract fun wishlistDao(): WishlistDao
@@ -59,6 +57,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "hotwheels_database"
                 )
                     .addMigrations(*DatabaseMigrations.getAllMigrations())
+                    .fallbackToDestructiveMigration() // For development: will recreate DB if schema changed
                     .fallbackToDestructiveMigrationOnDowngrade() // Only for downgrades, not upgrades
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -75,7 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
                 INSTANCE = instance
                 
                 // Log successful database creation
-                android.util.Log.i("AppDatabase", "✅ Database instance created successfully with version 4")
+                android.util.Log.i("AppDatabase", "✅ Database instance created successfully with version 6")
                 
                 instance
             }

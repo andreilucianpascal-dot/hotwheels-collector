@@ -117,7 +117,11 @@ fun AddMainlineScreen(
     BackHandler(enabled = true) { navigateHome() }
 
     // ✅ PREVIEW POZĂ + SPINNER: Arată poza în timpul procesării
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         // Preview al pozei originale (blur sau normal)
         frontPhotoUri?.let { uri ->
             AsyncImage(
@@ -153,7 +157,7 @@ fun AddMainlineScreen(
                 Spacer(modifier = Modifier.size(16.dp))
                 
                 Text(
-                    text = "Procesare poză...",
+                    text = "Processing photo...",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color.White,
                     textAlign = TextAlign.Center

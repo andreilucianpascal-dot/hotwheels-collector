@@ -64,14 +64,31 @@ class CarSyncRepository @Inject constructor(
             // Dacă există, NU salvez în globalBarcodes (pentru că e același barcode)
             // DAR salvez în globalCars (pentru că mașina poate avea descriere diferită)
             var barcodeExistsInGlobal = false
-            if (car.barcode.isNotEmpty()) {
-                val existingBarcode = firestoreRepository.checkBarcodeInGlobalDatabase(car.barcode)
-                if (existingBarcode != null) {
-                    Log.d("CarSyncRepository", "⚠️ Barcode ${car.barcode} already exists in globalBarcodes")
-                    Log.d("CarSyncRepository", "  Existing: ${existingBarcode.carName} by ${existingBarcode.brand}")
-                    Log.d("CarSyncRepository", "  → Skipping globalBarcodes save, but will save to globalCars")
-                    barcodeExistsInGlobal = true
+            Log.d("CarSyncRepository", "🔍 Checking barcode status:")
+            Log.d("CarSyncRepository", "  - Barcode: '${car.barcode}'")
+            Log.d("CarSyncRepository", "  - Barcode isEmpty: ${car.barcode.isEmpty()}")
+            Log.d("CarSyncRepository", "  - Barcode isBlank: ${car.barcode.isBlank()}")
+            
+            if (car.barcode.isNotEmpty() && car.barcode.isNotBlank()) {
+                try {
+                    Log.d("CarSyncRepository", "  → Checking if barcode exists in globalBarcodes...")
+                    val existingBarcode = firestoreRepository.checkBarcodeInGlobalDatabase(car.barcode)
+                    if (existingBarcode != null) {
+                        Log.d("CarSyncRepository", "⚠️ Barcode ${car.barcode} already exists in globalBarcodes")
+                        Log.d("CarSyncRepository", "  Existing: ${existingBarcode.carName} by ${existingBarcode.brand}")
+                        Log.d("CarSyncRepository", "  → Skipping globalBarcodes save, but will save to globalCars")
+                        barcodeExistsInGlobal = true
+                    } else {
+                        Log.d("CarSyncRepository", "✅ Barcode ${car.barcode} NOT found in globalBarcodes - WILL SAVE")
+                    }
+                } catch (e: Exception) {
+                    Log.e("CarSyncRepository", "❌ Error checking barcode in globalBarcodes: ${e.message}", e)
+                    e.printStackTrace()
+                    // Continue with save attempt if check fails - assume barcode doesn't exist
+                    barcodeExistsInGlobal = false
                 }
+            } else {
+                Log.w("CarSyncRepository", "⚠️ Car has no barcode (empty or blank) - skipping globalBarcodes save")
             }
             
             // Upload photos to Firestore Storage and get global URLs (ÎNTOTDEAUNA - pentru globalCars)
@@ -82,17 +99,45 @@ class CarSyncRepository @Inject constructor(
             
             try {
                 // Încearcă să uploadeze thumbnail (esential pentru Browse)
-                thumbnailUrl = uploadPhotoToFirestore(car.combinedPhotoPath ?: "", carId, "thumbnail", car.series)
+                val thumbnailPath = car.combinedPhotoPath ?: ""
+                Log.d("CarSyncRepository", "🔄 Uploading thumbnail:")
+                Log.d("CarSyncRepository", "  - Series: ${car.series}")
+                Log.d("CarSyncRepository", "  - Car ID: $carId")
+                Log.d("CarSyncRepository", "  - Thumbnail path: '$thumbnailPath'")
+                Log.d("CarSyncRepository", "  - Path isEmpty: ${thumbnailPath.isEmpty()}")
+                
+                if (thumbnailPath.isNotEmpty()) {
+                    val thumbnailFile = java.io.File(thumbnailPath)
+                    Log.d("CarSyncRepository", "  - File exists: ${thumbnailFile.exists()}")
+                    Log.d("CarSyncRepository", "  - File size: ${if (thumbnailFile.exists()) thumbnailFile.length() else 0} bytes")
+                }
+                
+                thumbnailUrl = uploadPhotoToFirestore(thumbnailPath, carId, "thumbnail", car.series)
+                Log.d("CarSyncRepository", "  - Thumbnail URL result: ${if (thumbnailUrl.isNotEmpty()) "✅ Success: $thumbnailUrl" else "❌ Empty"}")
             } catch (e: Exception) {
                 Log.e("CarSyncRepository", "❌ Failed to upload thumbnail photo: ${e.message}", e)
+                e.printStackTrace()
                 // ✅ FIX: Dacă thumbnail-ul eșuează, totuși continuăm (poate fullPhotoUrl merge)
             }
             
             try {
                 // Încearcă să uploadeze full photo (esential pentru detalii)
-                fullPhotoUrl = uploadPhotoToFirestore(car.photoUrl ?: "", carId, "full", car.series)
+                val fullPhotoPath = car.photoUrl ?: ""
+                Log.d("CarSyncRepository", "🔄 Uploading full photo:")
+                Log.d("CarSyncRepository", "  - Full photo path: '$fullPhotoPath'")
+                Log.d("CarSyncRepository", "  - Path isEmpty: ${fullPhotoPath.isEmpty()}")
+                
+                if (fullPhotoPath.isNotEmpty()) {
+                    val fullPhotoFile = java.io.File(fullPhotoPath)
+                    Log.d("CarSyncRepository", "  - File exists: ${fullPhotoFile.exists()}")
+                    Log.d("CarSyncRepository", "  - File size: ${if (fullPhotoFile.exists()) fullPhotoFile.length() else 0} bytes")
+                }
+                
+                fullPhotoUrl = uploadPhotoToFirestore(fullPhotoPath, carId, "full", car.series)
+                Log.d("CarSyncRepository", "  - Full photo URL result: ${if (fullPhotoUrl.isNotEmpty()) "✅ Success: $fullPhotoUrl" else "❌ Empty"}")
             } catch (e: Exception) {
                 Log.e("CarSyncRepository", "❌ Failed to upload full photo: ${e.message}", e)
+                e.printStackTrace()
                 // ✅ FIX: Dacă full photo eșuează, totuși continuăm
             }
             
@@ -126,6 +171,25 @@ class CarSyncRepository @Inject constructor(
             // Mașina poate avea același barcode dar descriere diferită (model, brand, year, color)
             // ✅ FIX: Salvez chiar dacă photo URLs sunt goale (pentru că datele textuale sunt utile)
             try {
+                // ✅ FIX: Set category correctly based on car type
+                // For Premium: category = series ("Premium")
+                // For Silver Series: category = series ("Silver Series")
+                // For TH: category = "Treasure Hunt" (from subseries "TH")
+                // For STH: category = "Super Treasure Hunt" (from subseries "STH")
+                // For others: category = series
+                val category = when {
+                    car.isSTH -> "Super Treasure Hunt"
+                    car.isTH -> "Treasure Hunt"
+                    car.series.equals("Silver Series", ignoreCase = true) -> "Silver Series"
+                    else -> car.series
+                }
+                
+                Log.d("CarSyncRepository", "🔄 Saving to globalCars:")
+                Log.d("CarSyncRepository", "  - Category: $category")
+                Log.d("CarSyncRepository", "  - Series: ${car.series}")
+                Log.d("CarSyncRepository", "  - Thumbnail URL: ${if (thumbnailUrl.isNotEmpty()) thumbnailUrl else "EMPTY"}")
+                Log.d("CarSyncRepository", "  - Full Photo URL: ${if (fullPhotoUrl.isNotEmpty()) fullPhotoUrl else "EMPTY"}")
+                
                 val result = firestoreRepository.saveAllCarsToGlobalDatabase(
                     localCarId = carId,
                     carName = car.model,
@@ -136,7 +200,7 @@ class CarSyncRepository @Inject constructor(
                     frontPhotoUrl = thumbnailUrl.ifEmpty { null }, // Null dacă e gol
                     backPhotoUrl = fullPhotoUrl.ifEmpty { null }, // Null dacă e gol
                     croppedBarcodeUrl = barcodeUrl?.takeIf { it.isNotEmpty() },
-                    category = car.series, // "Mainline", "Premium", "Others"
+                    category = category,
                     subcategory = car.subseries, // Rally, Car Culture, TH, STH, etc.
                     barcode = car.barcode.takeIf { it.isNotEmpty() },
                     isTH = car.isTH,
@@ -145,6 +209,7 @@ class CarSyncRepository @Inject constructor(
                 
                 if (result.isSuccess) {
                     Log.i("CarSyncRepository", "✅ Saved to globalCars collection")
+                    Log.i("CarSyncRepository", "  → frontPhotoUrl: ${thumbnailUrl.ifEmpty { "EMPTY" }}")
                 } else {
                     Log.w("CarSyncRepository", "Failed to save to globalCars: ${result.exceptionOrNull()?.message}")
                 }
@@ -156,8 +221,34 @@ class CarSyncRepository @Inject constructor(
             // Sync to Firestore globalBarcodes collection
             // ✅ FIX: Salvez în globalBarcodes DOAR dacă barcode-ul NU există deja
             // (Barcode-ul este comun pentru același model - nu are sens să-l salvez de două ori)
-            if (car.barcode.isNotEmpty() && !barcodeExistsInGlobal) {
+            // ✅ FIX: Pentru Silver Series și Mainline, setăm category corect
+            // ✅ CRITICAL: Salvez barcode-ul CHIAR DACĂ thumbnail-ul eșuează (barcode-ul este esențial pentru căutare)
+            Log.d("CarSyncRepository", "🔍 Final barcode save check:")
+            Log.d("CarSyncRepository", "  - Barcode: '${car.barcode}'")
+            Log.d("CarSyncRepository", "  - Barcode isNotEmpty: ${car.barcode.isNotEmpty()}")
+            Log.d("CarSyncRepository", "  - Barcode isNotBlank: ${car.barcode.isNotBlank()}")
+            Log.d("CarSyncRepository", "  - barcodeExistsInGlobal: $barcodeExistsInGlobal")
+            
+            if (car.barcode.isNotEmpty() && car.barcode.isNotBlank() && !barcodeExistsInGlobal) {
                 try {
+                    // ✅ FIX: Set category correctly based on car type
+                    // For Premium: category = series ("Premium")
+                    // For Silver Series: category = series ("Silver Series")
+                    // For TH: category = "Treasure Hunt"
+                    // For STH: category = "Super Treasure Hunt"
+                    // For others: category = series
+                    val category = when {
+                        car.isSTH -> "Super Treasure Hunt"
+                        car.isTH -> "Treasure Hunt"
+                        car.series.equals("Silver Series", ignoreCase = true) -> "Silver Series"
+                        else -> car.series
+                    }
+                    
+                    Log.d("CarSyncRepository", "🔄 Attempting to save barcode to globalBarcodes:")
+                    Log.d("CarSyncRepository", "  - Barcode: ${car.barcode}")
+                    Log.d("CarSyncRepository", "  - Category: $category")
+                    Log.d("CarSyncRepository", "  - Series: ${car.series}")
+                    
                     val result = firestoreRepository.saveToGlobalDatabase(
                         barcode = car.barcode,
                         carName = car.model,
@@ -165,24 +256,38 @@ class CarSyncRepository @Inject constructor(
                         series = car.series,
                         year = car.year,
                         color = car.color.takeIf { it.isNotEmpty() },
-                        frontPhotoUrl = thumbnailUrl, // Thumbnail for Browse Mainline
-                        backPhotoUrl = fullPhotoUrl, // Full photo for detailed view
-                        croppedBarcodeUrl = barcodeUrl,
-                        category = car.series,
+                        frontPhotoUrl = thumbnailUrl.ifEmpty { null }, // Thumbnail for Browse
+                        backPhotoUrl = fullPhotoUrl.ifEmpty { null }, // Full photo for detailed view
+                        croppedBarcodeUrl = barcodeUrl?.takeIf { it.isNotEmpty() },
+                        category = category,
                         subcategory = car.subseries
                     )
                     
                     if (result.isSuccess) {
-                        Log.i("CarSyncRepository", "✅ Saved to globalBarcodes collection (new barcode)")
+                        Log.i("CarSyncRepository", "✅✅✅ Successfully saved to globalBarcodes collection ✅✅✅")
+                        Log.i("CarSyncRepository", "  → Barcode: ${car.barcode}")
+                        Log.i("CarSyncRepository", "  → Category: $category")
+                        Log.i("CarSyncRepository", "  → frontPhotoUrl: ${if (thumbnailUrl.isNotEmpty()) thumbnailUrl else "EMPTY"}")
+                        Log.i("CarSyncRepository", "  → backPhotoUrl: ${if (fullPhotoUrl.isNotEmpty()) fullPhotoUrl else "EMPTY"}")
                     } else {
-                        Log.w("CarSyncRepository", "Failed to save to globalBarcodes: ${result.exceptionOrNull()?.message}")
+                        val error = result.exceptionOrNull()
+                        Log.e("CarSyncRepository", "❌❌❌ FAILED to save to globalBarcodes: ${error?.message}")
+                        error?.printStackTrace()
+                        // ✅ CRITICAL: Log error but don't throw - we want to continue with globalCars save
                     }
                 } catch (e: Exception) {
-                    Log.e("CarSyncRepository", "Firestore globalBarcodes save failed: ${e.message}", e)
-                    // Nu returnăm eroare - doar logăm
+                    Log.e("CarSyncRepository", "❌❌❌ EXCEPTION saving to globalBarcodes: ${e.message}", e)
+                    e.printStackTrace()
+                    // ✅ CRITICAL: Log error but don't throw - we want to continue with globalCars save
                 }
-            } else if (car.barcode.isNotEmpty() && barcodeExistsInGlobal) {
+            } else if (car.barcode.isNotEmpty() && car.barcode.isNotBlank() && barcodeExistsInGlobal) {
                 Log.d("CarSyncRepository", "⚠️ Skipped globalBarcodes save (barcode already exists)")
+            } else {
+                if (car.barcode.isEmpty() || car.barcode.isBlank()) {
+                    Log.w("CarSyncRepository", "⚠️ Skipped globalBarcodes save (barcode is empty or blank)")
+                } else {
+                    Log.w("CarSyncRepository", "⚠️ Skipped globalBarcodes save (unknown reason)")
+                }
             }
             
             Log.i("CarSyncRepository", "=== FIRESTORE SYNC COMPLETE ===")
@@ -235,13 +340,21 @@ class CarSyncRepository @Inject constructor(
             }
 
             // Determine storage path based on car series
-            val storagePath = when (carSeries.lowercase()) {
-                "premium" -> "premium/$carId/$photoType"
-                "treasure hunt" -> "treasure_hunt/$carId/$photoType"
-                "super treasure hunt" -> "super_treasure_hunt/$carId/$photoType"
-                "others" -> "others/$carId/$photoType"
+            // ✅ FIX: Handle case-insensitive matching for Silver Series
+            val seriesLower = carSeries.lowercase().trim()
+            val storagePath = when {
+                seriesLower.contains("premium") -> "premium/$carId/$photoType"
+                seriesLower.contains("silver") && seriesLower.contains("series") -> "silver_series/$carId/$photoType"
+                seriesLower.contains("treasure") && seriesLower.contains("hunt") && seriesLower.contains("super") -> "super_treasure_hunt/$carId/$photoType"
+                seriesLower.contains("treasure") && seriesLower.contains("hunt") -> "treasure_hunt/$carId/$photoType"
+                seriesLower.contains("other") -> "others/$carId/$photoType"
                 else -> "mainline/$carId/$photoType" // Default to mainline for "Mainline" series
             }
+            
+            Log.d("CarSyncRepository", "Storage path determined:")
+            Log.d("CarSyncRepository", "  - Input series: '$carSeries'")
+            Log.d("CarSyncRepository", "  - Normalized: '$seriesLower'")
+            Log.d("CarSyncRepository", "  - Storage path: '$storagePath'")
             
             Log.d("CarSyncRepository", "Using storage path: $storagePath for series: $carSeries")
         
@@ -336,6 +449,19 @@ class CarSyncRepository @Inject constructor(
                     // Get thumbnail URL (from STEP 1 or existing)
                     val thumbnailUrl = updatedCar.thumbnailFirebaseUrl ?: ""
                     
+                    // ✅ FIX: Set category correctly based on car type
+                    // For Premium: category = series ("Premium")
+                    // For Silver Series: category = series ("Silver Series")
+                    // For TH: category = "Treasure Hunt"
+                    // For STH: category = "Super Treasure Hunt"
+                    // For others: category = series
+                    val category = when {
+                        updatedCar.isSTH -> "Super Treasure Hunt"
+                        updatedCar.isTH -> "Treasure Hunt"
+                        updatedCar.series.equals("Silver Series", ignoreCase = true) -> "Silver Series"
+                        else -> updatedCar.series
+                    }
+                    
                     // Save to globalCars (always save, even if thumbnail is empty)
                     val result = firestoreRepository.saveAllCarsToGlobalDatabase(
                         localCarId = carId,
@@ -347,7 +473,7 @@ class CarSyncRepository @Inject constructor(
                         frontPhotoUrl = thumbnailUrl.ifEmpty { null },
                         backPhotoUrl = null, // Will be set in STEP 3
                         croppedBarcodeUrl = null, // Will be set in STEP 4
-                        category = updatedCar.series,
+                        category = category,
                         subcategory = updatedCar.subseries,
                         barcode = updatedCar.barcode.takeIf { it.isNotEmpty() },
                         isTH = updatedCar.isTH,
@@ -396,6 +522,19 @@ class CarSyncRepository @Inject constructor(
                     if (fullPhotoUrl.isNotEmpty()) {
                         carDao.updateFullPhotoSyncStatus(carId, PhotoSyncStatus.SYNCED, fullPhotoUrl)
                         
+                        // ✅ FIX: Set category correctly based on car type
+                        // For Premium: category = series ("Premium")
+                        // For Silver Series: category = series ("Silver Series")
+                        // For TH: category = "Treasure Hunt"
+                        // For STH: category = "Super Treasure Hunt"
+                        // For others: category = series
+                        val category = when {
+                            updatedCar.isSTH -> "Super Treasure Hunt"
+                            updatedCar.isTH -> "Treasure Hunt"
+                            updatedCar.series.equals("Silver Series", ignoreCase = true) -> "Silver Series"
+                            else -> updatedCar.series
+                        }
+                        
                         // Update Firestore with full photo URL
                         // Note: This is a simplified update - in production, you might want a dedicated update function
                         firestoreRepository.saveAllCarsToGlobalDatabase(
@@ -408,7 +547,7 @@ class CarSyncRepository @Inject constructor(
                             frontPhotoUrl = updatedCar.thumbnailFirebaseUrl ?: "",
                             backPhotoUrl = fullPhotoUrl, // ✅ Full photo URL
                             croppedBarcodeUrl = updatedCar.barcodeFirebaseUrl,
-                            category = updatedCar.series,
+                            category = category,
                             subcategory = updatedCar.subseries,
                             barcode = updatedCar.barcode.takeIf { it.isNotEmpty() },
                             isTH = updatedCar.isTH,

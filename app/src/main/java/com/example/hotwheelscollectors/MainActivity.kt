@@ -15,6 +15,7 @@ import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,8 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.hotwheelscollectors.ui.navigation.NavGraph
 import com.example.hotwheelscollectors.ui.theme.HotWheelsCollectorsTheme
+import com.example.hotwheelscollectors.viewmodels.AppThemeViewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -188,7 +191,26 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     // Add any other composition locals here if needed
                 ) {
-                    HotWheelsCollectorsTheme {
+                    // Global theme state backed by UserPreferences
+                    val appThemeViewModel: AppThemeViewModel = hiltViewModel()
+                    val themeState by appThemeViewModel.uiState.collectAsState()
+
+                    val isSystemDark = isSystemInDarkTheme()
+                    val darkTheme = when (themeState.themeMode) {
+                        "light" -> false
+                        "dark" -> true
+                        else -> isSystemDark
+                    }
+
+                    HotWheelsCollectorsTheme(
+                        darkTheme = darkTheme,
+                        dynamicColor = themeState.useDynamicColor,
+                        colorSchemeName = themeState.colorScheme,
+                        fontScale = themeState.fontScale,
+                        customPrimaryColor = themeState.customSchemeColor1,
+                        customSecondaryColor = themeState.customSchemeColor2,
+                        customTertiaryColor = themeState.customSchemeColor3,
+                    ) {
                         val navController = rememberNavController()
                         MainActivityContent(
                             onPermissionRequest = { checkAndRequestPermissions() },

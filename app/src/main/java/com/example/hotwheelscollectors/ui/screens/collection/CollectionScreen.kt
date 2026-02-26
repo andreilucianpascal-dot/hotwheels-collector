@@ -1,7 +1,9 @@
 package com.example.hotwheelscollectors.ui.screens.collection
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -14,6 +16,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,12 +39,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
 import com.example.hotwheelscollectors.R
+import android.net.Uri
 import com.example.hotwheelscollectors.data.local.entities.CarEntity
 import com.example.hotwheelscollectors.data.local.entities.PhotoEntity
 import com.example.hotwheelscollectors.data.local.entities.PhotoType
 import com.example.hotwheelscollectors.viewmodels.CollectionViewModel
 import com.example.hotwheelscollectors.model.HotWheelsCar
 import java.io.File
+import com.example.hotwheelscollectors.ui.theme.HotWheelsThemeManager
+import com.example.hotwheelscollectors.viewmodels.AppThemeViewModel
 
 // Collection categories similar to mainlines
 data class CollectionCategory(
@@ -60,49 +66,83 @@ fun CollectionScreen(
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
+    var showTotalPaidDialog by remember { mutableStateOf(false) }
 
     // Refresh user data on screen load
     LaunchedEffect(Unit) {
-        viewModel.refreshUserData()
+        try {
+            viewModel.refreshUserData()
+        } catch (e: Exception) {
+            android.util.Log.e("CollectionScreen", "Error refreshing user data: ${e.message}", e)
+        }
     }
 
     // Car count from database
-    val localCars by viewModel.localCars.collectAsState()
-    val tabCarCounts = remember(localCars) {
-        android.util.Log.d("CollectionScreen", "=== DEBUGGING TAB COUNTS ===")
-        android.util.Log.d("CollectionScreen", "Total cars: ${localCars.size}")
-        localCars.forEach { car ->
-            android.util.Log.d("CollectionScreen", "Car: ${car.model}, series: '${car.series}', isPremium: ${car.isPremium}, isTH: ${car.isTH}, isSTH: ${car.isSTH}")
+    val localCars by viewModel.localCars.collectAsStateWithLifecycle(initialValue = emptyList())
+    val totalCarsCount = localCars.size
+    val defaultCurrency = remember {
+        runCatching { java.util.Currency.getInstance(java.util.Locale.getDefault()).currencyCode }.getOrDefault("EUR")
+    }
+    val totalsByCurrency = remember(localCars, defaultCurrency) {
+        localCars
+            .asSequence()
+            .filter { it.purchasePrice > 0.0 }
+            .groupBy { it.purchaseCurrency.ifBlank { defaultCurrency } }
+            .mapValues { (_, cars) -> cars.sumOf { it.purchasePrice } }
+            .toSortedMap()
+    }
+    val totalPaidSummaryText = remember(totalsByCurrency) {
+        if (totalsByCurrency.isEmpty()) {
+            "Total paid: —"
+        } else {
+            val parts = totalsByCurrency.entries.map { (currency, sum) ->
+                "${String.format(java.util.Locale.getDefault(), "%.2f", sum)} $currency"
+            }
+            "Total paid: " + parts.joinToString(" • ")
         }
-        
-        val mainlineCount = localCars.count { it.series == "Mainline" && !it.isTH && !it.isSTH }
-        val premiumCount = localCars.count { it.isPremium } // ✅ Fixed: Use isPremium field instead of series
-        val thCount = localCars.count { it.isTH }
-        val sthCount = localCars.count { it.isSTH }
-        val othersCount = localCars.count { it.series == "Others" }
-        
-        android.util.Log.d("CollectionScreen", "Mainline count: $mainlineCount")
-        android.util.Log.d("CollectionScreen", "Premium count: $premiumCount")
-        android.util.Log.d("CollectionScreen", "TH count: $thCount")
-        android.util.Log.d("CollectionScreen", "STH count: $sthCount")
-        android.util.Log.d("CollectionScreen", "Others count: $othersCount")
-        
-        listOf(mainlineCount, premiumCount, thCount, sthCount, othersCount)
+    }
+    val tabCarCounts = remember(localCars) {
+        try {
+            android.util.Log.d("CollectionScreen", "=== DEBUGGING TAB COUNTS ===")
+            android.util.Log.d("CollectionScreen", "Total cars: ${localCars.size}")
+            localCars.forEach { car ->
+                android.util.Log.d("CollectionScreen", "Car: ${car.model}, series: '${car.series}', isPremium: ${car.isPremium}, isTH: ${car.isTH}, isSTH: ${car.isSTH}")
+            }
+            
+            val mainlineCount = localCars.count { it.series == "Mainline" && !it.isTH && !it.isSTH }
+            val premiumCount = localCars.count { it.isPremium } // ✅ Fixed: Use isPremium field instead of series
+            val silverSeriesCount = localCars.count { it.series.equals("Silver Series", ignoreCase = true) }
+            val thCount = localCars.count { it.isTH }
+            val sthCount = localCars.count { it.isSTH }
+            val othersCount = localCars.count { it.series == "Others" }
+            
+            android.util.Log.d("CollectionScreen", "Mainline count: $mainlineCount")
+            android.util.Log.d("CollectionScreen", "Premium count: $premiumCount")
+            android.util.Log.d("CollectionScreen", "Silver Series count: $silverSeriesCount")
+            android.util.Log.d("CollectionScreen", "TH count: $thCount")
+            android.util.Log.d("CollectionScreen", "STH count: $sthCount")
+            android.util.Log.d("CollectionScreen", "Others count: $othersCount")
+            
+            listOf(mainlineCount, premiumCount, silverSeriesCount, thCount, sthCount, othersCount)
+        } catch (e: Exception) {
+            android.util.Log.e("CollectionScreen", "Error calculating tab counts: ${e.message}", e)
+            listOf(0, 0, 0, 0, 0, 0) // Return safe default values
+        }
     }
     
-    // Safety check to ensure we have at least 5 elements
-    val safeTabCarCounts = if (tabCarCounts.size >= 5) {
+    // Safety check to ensure we have at least 6 elements
+    val safeTabCarCounts = if (tabCarCounts.size >= 6) {
         tabCarCounts
     } else {
-        listOf(0, 0, 0, 0, 0) // Default values
+        listOf(0, 0, 0, 0, 0, 0) // Default values
     }
     val categories = remember(safeTabCarCounts) {
         listOf(
             CollectionCategory(
                 id = "mainline",
                 title = "Mainline",
-                backgroundColor = Color.White,
-                textColor = Color(0xFF87CEEB),
+                backgroundColor = Color(0xFF87CEEB), // Light blue
+                textColor = Color.White,
                 icon = Icons.Default.DirectionsCar,
                 carCount = safeTabCarCounts[0]
             ),
@@ -110,9 +150,17 @@ fun CollectionScreen(
                 id = "premium",
                 title = "Premium",
                 backgroundColor = Color.Black,
-                textColor = Color(0xFFFFD700),
+                textColor = Color(0xFFFFD700), // Gold
                 icon = Icons.Default.Star,
                 carCount = safeTabCarCounts[1]
+            ),
+            CollectionCategory(
+                id = "silver_series",
+                title = "SilverSeries",
+                backgroundColor = Color(0xFFC0C0C0), // Silver
+                textColor = Color.Black,
+                icon = Icons.Default.Star,
+                carCount = safeTabCarCounts[2]
             ),
             CollectionCategory(
                 id = "treasure_hunt",
@@ -120,7 +168,7 @@ fun CollectionScreen(
                 backgroundColor = Color.White,
                 textColor = Color.Gray,
                 icon = Icons.Default.Diamond,
-                carCount = safeTabCarCounts[2]
+                carCount = safeTabCarCounts[3]
             ),
             CollectionCategory(
                 id = "super_treasure_hunt",
@@ -128,7 +176,7 @@ fun CollectionScreen(
                 backgroundColor = Color.White,
                 textColor = Color(0xFFFFD700),
                 icon = Icons.Default.Star,
-                carCount = safeTabCarCounts[3]
+                carCount = safeTabCarCounts[4]
             ),
             CollectionCategory(
                 id = "others",
@@ -136,15 +184,35 @@ fun CollectionScreen(
                 backgroundColor = Color(0xFF4CAF50),
                 textColor = Color.White,
                 icon = Icons.Default.Category,
-                carCount = safeTabCarCounts[4]
+                carCount = safeTabCarCounts[5]
             )
         )
     }
 
     var showDebugDialog by remember { mutableStateOf(false) }
 
+    // Themed background using current color scheme
+    val themeViewModel: AppThemeViewModel = hiltViewModel()
+    val themeState by themeViewModel.uiState.collectAsStateWithLifecycle()
+    val bgTheme = try {
+        HotWheelsThemeManager.getBackgroundTheme(themeState.colorScheme)
+    } catch (e: Exception) {
+        android.util.Log.e("CollectionScreen", "Error getting background theme: ${e.message}", e)
+        null
+    }
+
     Column(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = bgTheme?.secondaryGradient
+                    ?: androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+            )
     ) {
         // Debug Buttons Row
         Row(
@@ -186,7 +254,7 @@ fun CollectionScreen(
             }
         }
 
-        // Top App Bar
+        // Top App Bar with integrated search
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color(0xFF2196F3),
@@ -195,8 +263,7 @@ fun CollectionScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(horizontal = 4.dp),
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { navController.navigateUp() }) {
@@ -206,75 +273,257 @@ fun CollectionScreen(
                         tint = Color.White
                     )
                 }
-                Text(
-                    text = "My Collection (${localCars.size})",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.White,
-                    modifier = Modifier.weight(1f)
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp),
+                    placeholder = { Text("Search your collection...", color = Color.White.copy(alpha = 0.7f)) },
+                    leadingIcon = { 
+                        Icon(
+                            Icons.Default.Search, 
+                            contentDescription = "Search",
+                            tint = Color.White
+                        ) 
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(
+                                    Icons.Default.Clear,
+                                    contentDescription = "Clear",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
+                        cursorColor = Color.White
+                    )
                 )
-                IconButton(onClick = { /* Search functionality */ }) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = Color.White
+            }
+        }
+
+        // Category Tabs - Custom buttons with individual colors
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilledTonalButton(
+                onClick = { /* display-only */ },
+                modifier = Modifier.height(44.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DirectionsCar,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Total cars: $totalCarsCount")
+            }
+
+            FilledTonalButton(
+                onClick = { showTotalPaidDialog = true },
+                modifier = Modifier.height(44.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Payments,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(totalPaidSummaryText, maxLines = 1)
+            }
+        }
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(categories.size.coerceAtMost(6)) { index ->
+                if (index >= categories.size) return@items
+                val category = categories[index]
+                val isSelected = selectedTab == index
+                
+                Button(
+                    onClick = { selectedTab = index },
+                    modifier = Modifier.height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSelected) category.backgroundColor else category.backgroundColor.copy(alpha = 0.5f),
+                        contentColor = category.textColor
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "${category.title}(${category.carCount})",
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }
         }
 
-        // Search Bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
+        // Filter cars by search query
+        val filteredLocalCars = remember(localCars, searchQuery) {
+            if (searchQuery.isBlank()) {
+                localCars
+            } else {
+                val query = searchQuery.lowercase().trim()
+                localCars.filter { car ->
+                    car.model.lowercase().contains(query) ||
+                    car.brand.lowercase().contains(query) ||
+                    car.series.lowercase().contains(query) ||
+                    car.subseries.lowercase().contains(query) ||
+                    car.color.lowercase().contains(query) ||
+                    car.year.toString().contains(query) ||
+                    car.barcode.lowercase().contains(query)
+                }
+            }
+        }
+
+        Box(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
-                .padding(16.dp),
-            placeholder = { Text("Search your collection...") },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            singleLine = true
-        )
-
-        // Category Tabs
-        TabRow(
-            selectedTabIndex = selectedTab,
-            modifier = Modifier.fillMaxWidth()
         ) {
-            categories.forEachIndexed { index, category ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
-                        Text("${category.title} (${category.carCount})")
+            // ✅ FIX: When search query exists, show ALL filtered results regardless of selected tab
+            if (searchQuery.isNotBlank()) {
+                // Show all search results in a unified view
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (filteredLocalCars.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SearchOff,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(64.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "No results found for \"$searchQuery\"",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Try a different search term",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        item {
+                            Text(
+                                text = "Found ${filteredLocalCars.size} result(s) for \"$searchQuery\"",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        items(filteredLocalCars) { car ->
+                            CarCard(
+                                car = car,
+                                navController = navController,
+                                onClick = {
+                                    navController.navigate("car_details/${car.id}")
+                                }
+                            )
+                        }
                     }
-                )
+                }
+            } else {
+                // Content based on selected tab (only when no search query)
+                when (selectedTab) {
+                    0 -> {
+                        val mainlineCars = filteredLocalCars.filter { it.series == "Mainline" && !it.isTH && !it.isSTH }
+                        android.util.Log.d("CollectionScreen", "=== MAINLINE TAB CONTENT ===")
+                        android.util.Log.d("CollectionScreen", "Mainline filtered cars: ${mainlineCars.size}")
+                        mainlineCars.forEach { car ->
+                            android.util.Log.d("CollectionScreen", "Mainline car: ${car.model}, series: '${car.series}', isTH: ${car.isTH}, isSTH: ${car.isSTH}")
+                        }
+                        MainlineCollectionContent(navController, mainlineCars)
+                    }
+
+                    1 -> PremiumCategoriesScreen(navController, filteredLocalCars.filter { it.isPremium }) // ✅ Fixed: Use isPremium field
+
+                    2 -> {
+                        val silverSeriesCars = filteredLocalCars.filter { it.series.equals("Silver Series", ignoreCase = true) }
+                        android.util.Log.d("CollectionScreen", "=== SILVER SERIES TAB CONTENT ===")
+                        android.util.Log.d("CollectionScreen", "Silver Series filtered cars: ${silverSeriesCars.size}")
+                        silverSeriesCars.forEach { car ->
+                            android.util.Log.d("CollectionScreen", "Silver Series car: ${car.model}, series: '${car.series}'")
+                        }
+                        SilverSeriesScreen(navController)
+                    }
+
+                    3 -> TreasureHuntCollectionContent(navController, filteredLocalCars.filter { it.isTH })
+                    4 -> SuperTreasureHuntCollectionContent(navController, filteredLocalCars.filter { it.isSTH })
+                    5 -> {
+                        val othersCars = filteredLocalCars.filter { it.series == "Others" }
+                        android.util.Log.d("CollectionScreen", "=== OTHERS TAB CONTENT ===")
+                        android.util.Log.d("CollectionScreen", "Others filtered cars: ${othersCars.size}")
+                        othersCars.forEach { car ->
+                            android.util.Log.d("CollectionScreen", "Others car: ${car.model}, series: '${car.series}'")
+                        }
+                        OthersCollectionContent(navController, othersCars)
+                    }
+                }
             }
+
         }
 
-        // Content based on selected tab
-        when (selectedTab) {
-            0 -> {
-                val mainlineCars = localCars.filter { it.series == "Mainline" && !it.isTH && !it.isSTH }
-                android.util.Log.d("CollectionScreen", "=== MAINLINE TAB CONTENT ===")
-                android.util.Log.d("CollectionScreen", "Mainline filtered cars: ${mainlineCars.size}")
-                mainlineCars.forEach { car ->
-                    android.util.Log.d("CollectionScreen", "Mainline car: ${car.model}, series: '${car.series}', isTH: ${car.isTH}, isSTH: ${car.isSTH}")
+        if (showTotalPaidDialog) {
+            AlertDialog(
+                onDismissRequest = { showTotalPaidDialog = false },
+                title = { Text("Total price paid") },
+                text = {
+                    if (totalsByCurrency.isEmpty()) {
+                        Text("No purchase prices set yet.")
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Cars: $totalCarsCount")
+                            totalsByCurrency.forEach { (currency, sum) ->
+                                Text("${String.format(java.util.Locale.getDefault(), "%.2f", sum)} $currency")
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showTotalPaidDialog = false }) {
+                        Text("Close")
+                    }
                 }
-                MainlineCollectionContent(navController, mainlineCars)
-            }
-            1 -> PremiumCategoriesScreen(navController, localCars.filter { it.isPremium }) // ✅ Fixed: Use isPremium field
-            2 -> TreasureHuntCollectionContent(navController, localCars.filter { it.isTH })
-            3 -> SuperTreasureHuntCollectionContent(navController, localCars.filter { it.isSTH })
-            4 -> {
-                val othersCars = localCars.filter { it.series == "Others" }
-                android.util.Log.d("CollectionScreen", "=== OTHERS TAB CONTENT ===")
-                android.util.Log.d("CollectionScreen", "Others filtered cars: ${othersCars.size}")
-                othersCars.forEach { car ->
-                    android.util.Log.d("CollectionScreen", "Others car: ${car.model}, series: '${car.series}'")
-                }
-                OthersCollectionContent(navController, othersCars)
-            }
+            )
         }
-    }
 
     if (showDebugDialog) {
         AlertDialog(
@@ -297,6 +546,7 @@ fun CollectionScreen(
             }
         )
     }
+    } // ✅ Close main Column
 }
 
 @Composable
@@ -439,6 +689,7 @@ private fun TreasureHuntCollectionContent(
             items(cars) { car ->
                 CarCard(
                     car = car,
+                    navController = navController,
                     onClick = { 
                         // Navigate to car details
                         navController.navigate("car_details/${car.id}")
@@ -474,6 +725,7 @@ private fun SuperTreasureHuntCollectionContent(
             items(cars) { car ->
                 CarCard(
                     car = car,
+                    navController = navController,
                     onClick = { 
                         // Navigate to car details
                         navController.navigate("car_details/${car.id}")
@@ -509,6 +761,7 @@ private fun OthersCollectionContent(
             items(cars) { car ->
                 CarCard(
                     car = car,
+                    navController = navController,
                     onClick = { 
                         // Navigate to car details
                         navController.navigate("car_details/${car.id}")
@@ -600,6 +853,7 @@ private fun CarListItem(car: CarEntity, navController: NavController) {
 @Composable
 private fun CarCard(
     car: CarEntity,
+    navController: NavController,
     onClick: () -> Unit
 ) {
     Card(
@@ -616,7 +870,14 @@ private fun CarCard(
             // Load actual car photo from database
             CarPhoto(
                 car = car,
-                modifier = Modifier.size(80.dp)
+                modifier = Modifier
+                    .size(180.dp)
+                    .clickable {
+                        // ✅ FIX: Correct parameter order: carId first, then photoUri
+                        val photoUri = car.frontPhotoPath.ifEmpty { car.combinedPhotoPath }
+                        val encodedUri = java.net.URLEncoder.encode(photoUri, "UTF-8")
+                        navController.navigate("full_photo_view/${car.id}/$encodedUri")
+                    }
             )
             
             Spacer(modifier = Modifier.width(16.dp))

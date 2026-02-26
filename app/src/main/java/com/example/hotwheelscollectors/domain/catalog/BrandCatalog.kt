@@ -31,7 +31,7 @@ object BrandCatalog {
         "vans" to listOf(
             "chevrolet" to "Chevrolet", "chrysler" to "Chrysler", "dodge" to "Dodge",
             "ford" to "Ford", "honda" to "Honda", "mercedes" to "Mercedes",
-            "mercedes_benz" to "Mercedes", "nissan" to "Nissan", "toyota" to "Toyota",
+            "nissan" to "Nissan", "toyota" to "Toyota",
             "volkswagen" to "Volkswagen"
         ),
         "convertibles" to listOf(
@@ -57,7 +57,7 @@ object BrandCatalog {
             "audi" to "Audi", "bmw" to "BMW", "chevrolet" to "Chevrolet",
             "dodge" to "Dodge", "ford" to "Ford", "gmc" to "GMC", "honda" to "Honda",
             "hummer" to "Hummer", "jeep" to "Jeep", "land_rover" to "Land Rover",
-            "mercedes" to "Mercedes", "mercedes_benz" to "Mercedes", "nissan" to "Nissan",
+            "mercedes" to "Mercedes", "nissan" to "Nissan",
             "porsche" to "Porsche", "ram" to "Ram", "toyota" to "Toyota",
             "volkswagen" to "Volkswagen"
         ),

@@ -9,12 +9,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hotwheelscollectors.data.local.dao.CarDao
 import com.example.hotwheelscollectors.data.local.entities.CarEntity
+import com.example.hotwheelscollectors.data.local.UserPreferences
+import com.example.hotwheelscollectors.data.repository.GoogleDriveRepository
+import com.example.hotwheelscollectors.data.repository.FirestoreRepository
+import com.example.hotwheelscollectors.model.PersonalStorageType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 // --- UI State --- //
@@ -28,7 +35,10 @@ sealed class EditCarUiState {
 @HiltViewModel
 class EditCarDetailsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val carDao: CarDao
+    private val carDao: CarDao,
+    private val firestoreRepository: FirestoreRepository,
+    private val userPreferences: UserPreferences,
+    private val googleDriveRepository: GoogleDriveRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow<EditCarUiState>(EditCarUiState.Idle)
@@ -150,7 +160,8 @@ class EditCarDetailsViewModel @Inject constructor(
     }
 
     /**
-     * Salvează modificările în baza de date
+     * Salvează modificările în baza de date locală și sincronizează în Firestore
+     * ✅ Sync modificări: Actualizează brand, model, year, color în baza globală pentru căutare
      */
     fun saveChanges() {
         viewModelScope.launch {
@@ -169,8 +180,31 @@ class EditCarDetailsViewModel @Inject constructor(
                     lastModified = java.util.Date()
                 )
                 
-                // Salvează în baza de date
+                // Step 1: Salvează în baza de date locală
                 carDao.updateCar(updatedCar)
+                Log.d("EditCarDetailsViewModel", "Car updated successfully in local database")
+
+                // ✅ CRITICAL (Drive PRIMARY): write back to db.json so changes survive restart
+                val storageType = userPreferences.storageType.first()
+                if (storageType == PersonalStorageType.GOOGLE_DRIVE) {
+                    val r = googleDriveRepository.upsertCarInDbJsonIfDrivePrimary(updatedCar)
+                    if (r.isFailure) {
+                        throw r.exceptionOrNull() ?: Exception("Failed to save changes to Google Drive")
+                    }
+                }
+                
+                // Step 2: Sincronizează modificările în Firestore (background, non-blocking)
+                // ✅ IMPORTANT: Actualizează brand, model, year, color în globalCars pentru căutare
+                launch(Dispatchers.IO) {
+                    try {
+                        syncCarDataToFirestore(updatedCar)
+                        Log.d("EditCarDetailsViewModel", "✅ Car data synced to Firestore successfully")
+                    } catch (e: Exception) {
+                        Log.w("EditCarDetailsViewModel", "⚠️ Failed to sync car data to Firestore: ${e.message}", e)
+                        // Nu afișăm eroare utilizatorului - sync-ul e în background
+                        // Modificările locale sunt salvate și corecte
+                    }
+                }
                 
                 // Actualizează valorile originale
                 originalValues.clear()
@@ -187,6 +221,55 @@ class EditCarDetailsViewModel @Inject constructor(
                 Log.e("EditCarDetailsViewModel", "Error saving changes: ${e.message}", e)
                 _uiState.value = EditCarUiState.Error("Failed to save changes: ${e.message}")
             }
+        }
+    }
+    
+    /**
+     * Sincronizează datele mașinii în Firestore globalCars
+     * Actualizează brand, model, year, color pentru căutare în search bar
+     */
+    private suspend fun syncCarDataToFirestore(car: CarEntity) = withContext(Dispatchers.IO) {
+        try {
+            // Verifică dacă mașina există deja în Firestore (are URL-uri Firebase)
+            val hasFirestoreData = car.thumbnailFirebaseUrl != null || car.fullPhotoFirebaseUrl != null
+            
+            if (hasFirestoreData || car.barcode.isNotEmpty()) {
+                // ✅ FIX: Set category correctly for Silver Series
+                val category = if (car.series.equals("Silver Series", ignoreCase = true)) {
+                    "Silver Series"
+                } else {
+                    car.series
+                }
+                
+                // Actualizează documentul existent în globalCars cu datele noi
+                val result = firestoreRepository.saveAllCarsToGlobalDatabase(
+                    localCarId = car.id,
+                    carName = car.model,
+                    brand = car.brand,
+                    series = car.series,
+                    year = car.year,
+                    color = car.color.takeIf { it.isNotEmpty() },
+                    frontPhotoUrl = car.thumbnailFirebaseUrl,
+                    backPhotoUrl = car.fullPhotoFirebaseUrl,
+                    croppedBarcodeUrl = car.barcodeFirebaseUrl,
+                    category = category, // "Mainline", "Premium", "Silver Series", etc.
+                    subcategory = car.subseries,
+                    barcode = car.barcode.takeIf { it.isNotEmpty() },
+                    isTH = car.isTH,
+                    isSTH = car.isSTH
+                )
+                
+                if (result.isSuccess) {
+                    Log.d("EditCarDetailsViewModel", "✅ Car data synced to Firestore: brand='${car.brand}', model='${car.model}', year=${car.year}, color='${car.color}'")
+                } else {
+                    Log.w("EditCarDetailsViewModel", "⚠️ Failed to sync car data: ${result.exceptionOrNull()?.message}")
+                }
+            } else {
+                Log.d("EditCarDetailsViewModel", "Car not yet synced to Firestore - skipping update")
+            }
+        } catch (e: Exception) {
+            Log.e("EditCarDetailsViewModel", "Error syncing car data to Firestore: ${e.message}", e)
+            throw e
         }
     }
 

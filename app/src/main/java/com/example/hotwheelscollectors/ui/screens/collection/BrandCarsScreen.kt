@@ -129,7 +129,8 @@ fun BrandCarsScreen(
                         onMenuClick = { },
                         onCardClick = {
                             navController.navigate("car_details/${car.id}")
-                        }
+                        },
+                        navController = navController
                     )
                 }
             }

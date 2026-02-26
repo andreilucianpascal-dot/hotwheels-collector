@@ -52,6 +52,10 @@ data class PhotoEntity(
     val thumbnailSizeKB: Long? = null,     // File sizes for monitoring
     val fullSizeSizeKB: Long? = null,
     val isTemporary: Boolean = false,      // For back photos that should be deleted after barcode extraction
+    
+    // GOOGLE DRIVE INTEGRATION
+    val driveFileId: String? = null,       // Google Drive file ID for programmatic download
+    val driveThumbnailFileId: String? = null, // Google Drive thumbnail file ID
 )
 
 enum class PhotoType {

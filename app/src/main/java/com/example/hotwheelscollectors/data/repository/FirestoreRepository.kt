@@ -320,11 +320,19 @@ class FirestoreRepository @Inject constructor(
      */
     suspend fun getGlobalCars(): List<GlobalCarData> {
         return try {
-            // Get cars from both collections
-            val barcodedCars = firestore.collection("globalBarcodes").get().await()
+            // ✅ OPTIMIZATION: Get cars from both collections, but handle empty collections gracefully
+            // If globalBarcodes doesn't exist yet, it will return empty list (not error)
+            val barcodedCars = try {
+                firestore.collection("globalBarcodes").get().await()
+            } catch (e: Exception) {
+                // Collection doesn't exist yet - return empty list
+                android.util.Log.d("FirestoreRepository", "globalBarcodes collection doesn't exist yet: ${e.message}")
+                null // Use null to indicate collection doesn't exist
+            }
+            
             val allCars = firestore.collection("globalCars").get().await()
             
-            val barcodedData = barcodedCars.documents.mapNotNull { document ->
+            val barcodedData = barcodedCars?.documents?.mapNotNull { document ->
                 try {
                     GlobalCarData(
                         barcode = document.getString("barcode") ?: "",
@@ -345,7 +353,7 @@ class FirestoreRepository @Inject constructor(
                 } catch (e: Exception) {
                     null
                 }
-            }
+            } ?: emptyList() // Return empty list if barcodedCars is null
             
             val allCarsData = allCars.documents.mapNotNull { document ->
                 try {
@@ -388,7 +396,9 @@ class FirestoreRepository @Inject constructor(
             it.category.lowercase() == "mainline" || 
             (!it.category.lowercase().contains("premium") && 
              !it.category.lowercase().contains("treasure") &&
-             !it.category.lowercase().contains("other"))
+             !it.category.lowercase().contains("other") &&
+             !it.category.lowercase().contains("silver series") &&
+             !it.series.lowercase().contains("silver series"))
         }
     }
 
@@ -428,6 +438,155 @@ class FirestoreRepository @Inject constructor(
         return getGlobalCars().filter { 
             it.category.lowercase().contains("other") ||
             it.series.lowercase() == "others"
+        }
+    }
+
+    /**
+     * Get Silver Series cars from global database
+     */
+    suspend fun getGlobalSilverSeriesCars(): List<GlobalCarData> {
+        return getGlobalCars().filter { 
+            it.series.lowercase().contains("silver series") ||
+            it.category.lowercase().contains("silver series")
+        }
+    }
+
+    /**
+     * Find car by barcode in global database using direct Firestore query
+     * Returns the first car found (for category detection), or null if not found
+     * NOTE: For displaying all variants, Browse screens filter by barcode after loading
+     */
+    suspend fun findGlobalCarByBarcode(barcode: String): GlobalCarData? {
+        return try {
+            // Query direct în Firestore pentru TOATE variantele cu acel barcode
+            // Folosim globalCars (nu globalBarcodes) pentru a găsi toate variantele
+            val querySnapshot = firestore.collection("globalCars")
+                .whereEqualTo("barcode", barcode)
+                .limit(1)  // Luăm doar prima pentru a determina categoria
+                .get()
+                .await()
+            
+            if (querySnapshot.isEmpty) {
+                // Dacă nu găsim în globalCars, încercăm în globalBarcodes
+                val docRef = firestore.collection("globalBarcodes").document(barcode)
+                val document = docRef.get().await()
+                
+                if (document.exists()) {
+                    val data = document.data ?: return null
+                    return GlobalCarData(
+                        barcode = document.getString("barcode") ?: "",
+                        carName = document.getString("carName") ?: "",
+                        brand = document.getString("brand") ?: "",
+                        series = document.getString("series") ?: "",
+                        year = (document.getLong("year") ?: 0).toInt(),
+                        color = document.getString("color") ?: "",
+                        frontPhotoUrl = document.getString("frontPhotoUrl") ?: "",
+                        backPhotoUrl = document.getString("backPhotoUrl") ?: "",
+                        croppedBarcodeUrl = document.getString("croppedBarcodeUrl") ?: "",
+                        contributorUserId = document.getString("contributorUserId") ?: "",
+                        verificationCount = (document.getLong("verificationCount") ?: 1).toInt(),
+                        category = document.getString("category") ?: "",
+                        subcategory = document.getString("subcategory") ?: "",
+                        createdAt = document.getTimestamp("createdAt")?.toDate() ?: Date()
+                    )
+                }
+                return null
+            }
+            
+            // Convert primul document găsit
+            val document = querySnapshot.documents.first()
+            val data = document.data
+            return GlobalCarData(
+                barcode = data?.get("barcode") as? String ?: "",
+                carName = data?.get("carName") as? String ?: "",
+                brand = data?.get("brand") as? String ?: "",
+                series = data?.get("series") as? String ?: "",
+                year = (data?.get("year") as? Long ?: 0).toInt(),
+                color = data?.get("color") as? String ?: "",
+                frontPhotoUrl = data?.get("frontPhotoUrl") as? String ?: "",
+                backPhotoUrl = data?.get("backPhotoUrl") as? String ?: "",
+                croppedBarcodeUrl = data?.get("croppedBarcodeUrl") as? String ?: "",
+                contributorUserId = data?.get("contributorUserId") as? String ?: "",
+                verificationCount = (data?.get("verificationCount") as? Long ?: 1).toInt(),
+                category = data?.get("category") as? String ?: "",
+                subcategory = data?.get("subcategory") as? String ?: "",
+                createdAt = (data?.get("createdAt") as? com.google.firebase.Timestamp)?.toDate() ?: Date()
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("FirestoreRepository", "Error finding car by barcode: ${e.message}", e)
+            null
+        }
+    }
+    
+    /**
+     * Find ALL car variants by barcode in global database
+     * Returns all cars with matching barcode (for displaying all variants)
+     */
+    suspend fun findAllGlobalCarsByBarcode(barcode: String): List<GlobalCarData> {
+        return try {
+            // Query direct în Firestore pentru TOATE variantele cu acel barcode
+            val querySnapshot = firestore.collection("globalCars")
+                .whereEqualTo("barcode", barcode)
+                .get()
+                .await()
+            
+            val cars = querySnapshot.documents.mapNotNull { document ->
+                try {
+                    val data = document.data ?: return@mapNotNull null
+                    GlobalCarData(
+                        barcode = data["barcode"] as? String ?: "",
+                        carName = data["carName"] as? String ?: "",
+                        brand = data["brand"] as? String ?: "",
+                        series = data["series"] as? String ?: "",
+                        year = (data["year"] as? Long ?: 0).toInt(),
+                        color = data["color"] as? String ?: "",
+                        frontPhotoUrl = data["frontPhotoUrl"] as? String ?: "",
+                        backPhotoUrl = data["backPhotoUrl"] as? String ?: "",
+                        croppedBarcodeUrl = data["croppedBarcodeUrl"] as? String ?: "",
+                        contributorUserId = data["contributorUserId"] as? String ?: "",
+                        verificationCount = (data["verificationCount"] as? Long ?: 1).toInt(),
+                        category = data["category"] as? String ?: "",
+                        subcategory = data["subcategory"] as? String ?: "",
+                        createdAt = (data["createdAt"] as? com.google.firebase.Timestamp)?.toDate() ?: Date()
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("FirestoreRepository", "Error converting document: ${e.message}", e)
+                    null
+                }
+            }
+            
+            // Dacă nu găsim în globalCars, încercăm în globalBarcodes
+            if (cars.isEmpty()) {
+                val docRef = firestore.collection("globalBarcodes").document(barcode)
+                val document = docRef.get().await()
+                
+                if (document.exists()) {
+                    val data = document.data ?: return emptyList()
+                    return listOf(
+                        GlobalCarData(
+                            barcode = document.getString("barcode") ?: "",
+                            carName = document.getString("carName") ?: "",
+                            brand = document.getString("brand") ?: "",
+                            series = document.getString("series") ?: "",
+                            year = (document.getLong("year") ?: 0).toInt(),
+                            color = document.getString("color") ?: "",
+                            frontPhotoUrl = document.getString("frontPhotoUrl") ?: "",
+                            backPhotoUrl = document.getString("backPhotoUrl") ?: "",
+                            croppedBarcodeUrl = document.getString("croppedBarcodeUrl") ?: "",
+                            contributorUserId = document.getString("contributorUserId") ?: "",
+                            verificationCount = (document.getLong("verificationCount") ?: 1).toInt(),
+                            category = document.getString("category") ?: "",
+                            subcategory = document.getString("subcategory") ?: "",
+                            createdAt = document.getTimestamp("createdAt")?.toDate() ?: Date()
+                        )
+                    )
+                }
+            }
+            
+            cars
+        } catch (e: Exception) {
+            android.util.Log.e("FirestoreRepository", "Error finding all cars by barcode: ${e.message}", e)
+            emptyList()
         }
     }
 

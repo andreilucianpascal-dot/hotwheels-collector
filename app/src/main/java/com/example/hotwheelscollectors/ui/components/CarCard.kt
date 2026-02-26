@@ -24,6 +24,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.hotwheelscollectors.model.HotWheelsCar
@@ -36,7 +37,8 @@ fun CarCard(
     onImageClick: (String, String) -> Unit,
     onMenuClick: () -> Unit,
     onCardClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    navController: NavController? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
@@ -71,27 +73,77 @@ fun CarCard(
             android.util.Log.d("CarCard", "Displaying thumbnail: ${car.combinedPhotoPath}")
             
             if (car.combinedPhotoPath.isNotBlank()) {
-                val thumbnailFile = File(car.combinedPhotoPath)
-                android.util.Log.d("CarCard", "Thumbnail file exists: ${thumbnailFile.exists()}")
-                android.util.Log.d("CarCard", "Thumbnail file size: ${thumbnailFile.length()} bytes")
-                if (thumbnailFile.exists()) {
+                // ✅ FIX: Support both local file paths and URLs (Firebase Storage, Google Drive)
+                // If combinedPhotoPath is a URL (starts with http), use it directly
+                // Otherwise, check if local file exists
+                val isUrl = car.combinedPhotoPath.startsWith("http://") || car.combinedPhotoPath.startsWith("https://")
+                val thumbnailData = if (isUrl) {
+                    // ✅ FIX: Convert Google Drive web URLs to direct download URLs
+                    // Handle both web view URLs (drive.google.com/file/d/...) and direct download URLs (uc?export=download&id=...)
+                    val url = when {
+                        // Already a direct download URL - use as is
+                        car.combinedPhotoPath.contains("uc?export=download&id=") -> {
+                            car.combinedPhotoPath
+                        }
+                        // Web view URL - convert to direct download
+                        car.combinedPhotoPath.contains("drive.google.com/file/d/") -> {
+                            // Extract file ID from web URL: https://drive.google.com/file/d/FILE_ID/view...
+                            val fileIdMatch = Regex("drive\\.google\\.com/file/d/([a-zA-Z0-9_-]+)").find(car.combinedPhotoPath)
+                            if (fileIdMatch != null) {
+                                val fileId = fileIdMatch.groupValues[1]
+                                "https://drive.google.com/uc?export=download&id=$fileId"
+                            } else {
+                                car.combinedPhotoPath
+                            }
+                        }
+                        // Other URL (Firebase, etc.) - use as is
+                        else -> {
+                            car.combinedPhotoPath
+                        }
+                    }
+                    android.util.Log.d("CarCard", "Using thumbnail as URL: $url")
+                    url // Use URL directly
+                } else {
+                    val thumbnailFile = File(car.combinedPhotoPath)
+                    android.util.Log.d("CarCard", "Thumbnail file path: ${car.combinedPhotoPath}")
+                    android.util.Log.d("CarCard", "Thumbnail file exists: ${thumbnailFile.exists()}")
+                    if (thumbnailFile.exists()) {
+                        android.util.Log.d("CarCard", "Thumbnail file size: ${thumbnailFile.length()} bytes")
+                        thumbnailFile // Use local file
+                    } else {
+                        android.util.Log.w("CarCard", "Thumbnail file doesn't exist: ${car.combinedPhotoPath}")
+                        null // File doesn't exist
+                    }
+                }
+                
+                if (thumbnailData != null) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(thumbnailFile)
+                            .data(thumbnailData)
                             .memoryCachePolicy(coil.request.CachePolicy.ENABLED) // ✅ CACHE ACTIVAT
                             .diskCachePolicy(coil.request.CachePolicy.ENABLED) // ✅ CACHE ACTIVAT
                             .crossfade(true) // ✅ SMOOTH TRANSITIONS
                             .build(),
                         contentDescription = "Car Thumbnail",
                         contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                            .size(120.dp)
+                        modifier = Modifier
+                            .size(180.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { onImageClick("FullSize", car.frontPhotoPath) }
-                        )
+                            .clickable { 
+                                if (navController != null) {
+                                    // Navigate to full photo view screen
+                                    val photoUri = car.frontPhotoPath.ifEmpty { car.combinedPhotoPath }
+                                    val encodedUri = java.net.URLEncoder.encode(photoUri, "UTF-8")
+                                    navController.navigate("full_photo_view/${car.id}/$encodedUri")
+                                } else {
+                                    // Fallback to old behavior
+                                    onImageClick("FullSize", car.frontPhotoPath)
+                                }
+                            }
+                    )
                 } else {
-                    android.util.Log.w("CarCard", "Thumbnail file doesn't exist: ${car.combinedPhotoPath}")
-                    }
+                    android.util.Log.w("CarCard", "No valid thumbnail data available (not URL, file doesn't exist)")
+                }
             } else {
                 android.util.Log.w("CarCard", "No thumbnail path available")
             }

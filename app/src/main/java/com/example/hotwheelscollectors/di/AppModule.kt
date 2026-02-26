@@ -1,4 +1,4 @@
-package com.example.hotwheelscollectors.di
+﻿package com.example.hotwheelscollectors.di
 
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
@@ -23,11 +23,15 @@ import com.example.hotwheelscollectors.data.repository.FirestoreRepository
 import com.example.hotwheelscollectors.data.repository.AuthRepository
 import com.example.hotwheelscollectors.data.repository.LocalRepository
 import com.example.hotwheelscollectors.data.repository.GoogleDriveRepository
+import com.example.hotwheelscollectors.data.repository.CloudUserSettingsRepository
 import com.example.hotwheelscollectors.data.repository.OneDriveRepository
 import com.example.hotwheelscollectors.data.repository.DropboxRepository
 import com.example.hotwheelscollectors.data.repository.CarSyncRepository
 import com.example.hotwheelscollectors.data.repository.PhotoProcessingRepository
 import com.example.hotwheelscollectors.data.repository.StorageRepository
+import com.example.hotwheelscollectors.data.repository.UserCloudSyncRepository
+import com.example.hotwheelscollectors.data.repository.UserCloudSyncManager
+import com.example.hotwheelscollectors.data.repository.UserCloudRestoreManager
 import com.example.hotwheelscollectors.data.auth.GoogleDriveAuthService
 import com.example.hotwheelscollectors.utils.DatabaseCleanup
 import com.example.hotwheelscollectors.utils.PhotoOptimizer
@@ -110,15 +114,30 @@ object AppModule {
     @Singleton
     fun provideGoogleDriveRepository(
         @ApplicationContext context: Context,
+        appDatabase: AppDatabase,
         carDao: CarDao,
-        photoDao: PhotoDao
-    ): GoogleDriveRepository = GoogleDriveRepository(context, carDao, photoDao)
+        photoDao: PhotoDao,
+        gson: Gson,
+        userPreferences: UserPreferences,
+        authRepository: AuthRepository,
+        driveRootFolderManager: com.example.hotwheelscollectors.data.repository.DriveRootFolderManager
+    ): GoogleDriveRepository = GoogleDriveRepository(context, appDatabase, carDao, photoDao, gson, userPreferences, authRepository, driveRootFolderManager)
 
     @Provides
     @Singleton
     fun provideGoogleDriveAuthService(
         @ApplicationContext context: Context,
     ): GoogleDriveAuthService = GoogleDriveAuthService(context)
+
+    @Provides
+    @Singleton
+    fun provideCloudUserSettingsRepository(
+        @ApplicationContext context: Context,
+        authRepository: AuthRepository,
+        userPreferences: UserPreferences,
+        gson: Gson,
+        driveRootFolderManager: com.example.hotwheelscollectors.data.repository.DriveRootFolderManager
+    ): CloudUserSettingsRepository = CloudUserSettingsRepository(context, authRepository, userPreferences, gson, driveRootFolderManager)
 
     @Provides
     @Singleton
@@ -159,7 +178,8 @@ object AppModule {
         authRepository: AuthRepository,
         userDao: com.example.hotwheelscollectors.data.local.dao.UserDao,
         carDao: com.example.hotwheelscollectors.data.local.dao.CarDao,
-        firestoreRepository: FirestoreRepository
+        firestoreRepository: FirestoreRepository,
+        userCloudSyncRepository: UserCloudSyncRepository
     ): com.example.hotwheelscollectors.domain.usecase.collection.AddCarUseCase = 
         com.example.hotwheelscollectors.domain.usecase.collection.AddCarUseCase(
             context,
@@ -169,7 +189,8 @@ object AppModule {
             authRepository,
             userDao,
             carDao,
-            firestoreRepository
+            firestoreRepository,
+            userCloudSyncRepository
         )
 
     @Provides
@@ -179,4 +200,60 @@ object AppModule {
         carDao: CarDao,
         photoDao: PhotoDao
     ): DatabaseCleanup = DatabaseCleanup(context, carDao, photoDao)
+
+    @Provides
+    @Singleton
+    fun provideUserCloudSyncRepository(
+        @ApplicationContext context: Context,
+        appDatabase: AppDatabase,
+        userPreferences: UserPreferences,
+        gson: Gson,
+        googleDriveRepository: GoogleDriveRepository,
+        oneDriveRepository: OneDriveRepository,
+        dropboxRepository: DropboxRepository
+    ): UserCloudSyncRepository = UserCloudSyncRepository(
+        context,
+        appDatabase,
+        userPreferences,
+        gson,
+        googleDriveRepository,
+        oneDriveRepository,
+        dropboxRepository
+    )
+
+    @Provides
+    @Singleton
+    fun provideUserCloudSyncManager(
+        @ApplicationContext context: Context,
+        userCloudSyncRepository: UserCloudSyncRepository,
+        userPreferences: UserPreferences
+    ): UserCloudSyncManager = UserCloudSyncManager(
+        context,
+        userCloudSyncRepository,
+        userPreferences
+    )
+
+    @Provides
+    @Singleton
+    fun provideUserCloudRestoreManager(
+        @ApplicationContext context: Context,
+        appDatabase: AppDatabase,
+        userPreferences: UserPreferences,
+        authRepository: AuthRepository,
+        gson: Gson,
+        googleDriveRepository: GoogleDriveRepository,
+        oneDriveRepository: OneDriveRepository,
+        dropboxRepository: DropboxRepository
+    ): UserCloudRestoreManager = UserCloudRestoreManager(
+        context,
+        appDatabase,
+        userPreferences,
+        authRepository,
+        gson,
+        googleDriveRepository,
+        oneDriveRepository,
+        dropboxRepository
+    )
 }
+
+

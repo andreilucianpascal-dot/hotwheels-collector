@@ -3,6 +3,7 @@ package com.example.hotwheelscollectors.ui.screens.settings
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -10,10 +11,12 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.navigation.NavController
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,7 +34,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(),
+    navController: NavController? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
@@ -243,6 +247,24 @@ fun SettingsScreen(
                         
                         Spacer(modifier = Modifier.height(12.dp))
                         
+                        Button(
+                            onClick = { viewModel.testGoogleDriveConnection() },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !uiState.isLoading
+                        ) {
+                            if (uiState.isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("Test Connection & Create Folder")
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
                         OutlinedButton(
                             onClick = { viewModel.signOutFromGoogleDrive() },
                             modifier = Modifier.fillMaxWidth()
@@ -360,7 +382,10 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = 8.dp)
+                        .clickable(enabled = navController != null) {
+                            navController?.navigate("theme_settings")
+                        },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -368,11 +393,24 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.weight(1f)
                     )
-                    Text(
-                        text = "System Default",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Customize",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (navController != null) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowForward,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                 }
 
                 Divider()

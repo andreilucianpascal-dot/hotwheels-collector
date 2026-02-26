@@ -45,10 +45,11 @@ class StorageRepository(private val context: Context) {
             
             // Step 2: Determine storage path based on series
             // ✅ FIX: Storage Rules expects direct paths (mainline/, premium/, etc.) NOT global/mainline/
-            // Path examples: "mainline/$carId/$photoType", "premium/$carId/$photoType"
+            // Path examples: "mainline/$carId/$photoType", "premium/$carId/$photoType", "silver_series/$carId/$photoType"
             // Storage Rules: match /mainline/{carId}/{photoType} - expects direct path without "global/" prefix
             val photoRef = if (path.startsWith("mainline/") || 
                                 path.startsWith("premium/") || 
+                                path.startsWith("silver_series/") ||
                                 path.startsWith("treasure_hunt/") || 
                                 path.startsWith("super_treasure_hunt/") || 
                                 path.startsWith("others/")) {

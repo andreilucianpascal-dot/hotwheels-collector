@@ -170,6 +170,76 @@ object DatabaseMigrations {
     }
     
     /**
+     * Migration from version 4 to 5
+     * This migration removes BackupDao and BackupMetadataEntity tables (if they exist)
+     * Note: This is a no-op migration since we're just cleaning up unused tables
+     */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            android.util.Log.d("DatabaseMigrations", "🔄 Migrating from version 4 to 5 - Cleaning up unused backup tables")
+            
+            try {
+                // Drop backup tables if they exist (they were removed from entities)
+                // SQLite doesn't support IF EXISTS for DROP TABLE, so we'll use a try-catch
+                try {
+                    database.execSQL("DROP TABLE IF EXISTS backup_metadata")
+                    android.util.Log.d("DatabaseMigrations", "✅ Dropped backup_metadata table (if existed)")
+                } catch (e: Exception) {
+                    android.util.Log.d("DatabaseMigrations", "backup_metadata table didn't exist, skipping")
+                }
+                
+                android.util.Log.i("DatabaseMigrations", "🎉 Successfully migrated from version 4 to 5 - Cleaned up unused backup tables")
+                
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseMigrations", "❌ Migration failed: ${e.message}", e)
+                // Don't throw - this is a cleanup migration, not critical
+            }
+        }
+    }
+    
+    /**
+     * Migration from version 5 to 6
+     * This migration adds originalBrowsePhotoUrl column to cars table
+     * Used to prevent duplicate cars from Browse (each Firebase photo has unique URL)
+     */
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            android.util.Log.d("DatabaseMigrations", "🔄 Migrating from version 5 to 6 - Adding originalBrowsePhotoUrl column")
+            
+            try {
+                // Add originalBrowsePhotoUrl column to cars table
+                // This stores the Firebase Storage URL of the photo from Browse
+                // Used to prevent adding the same car from Browse multiple times
+                database.execSQL("ALTER TABLE cars ADD COLUMN originalBrowsePhotoUrl TEXT")
+                android.util.Log.d("DatabaseMigrations", "✅ Added originalBrowsePhotoUrl column")
+                
+                android.util.Log.i("DatabaseMigrations", "🎉 Successfully migrated from version 5 to 6 - Added originalBrowsePhotoUrl column")
+                
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseMigrations", "❌ Migration failed: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+
+    /**
+     * Migration from version 6 to 7
+     * Adds purchaseCurrency column to cars table (ISO 4217 code like RON/EUR/GBP).
+     */
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            android.util.Log.d("DatabaseMigrations", "🔄 Migrating from version 6 to 7 - Adding purchaseCurrency column")
+            try {
+                database.execSQL("ALTER TABLE cars ADD COLUMN purchaseCurrency TEXT NOT NULL DEFAULT ''")
+                android.util.Log.d("DatabaseMigrations", "✅ Added purchaseCurrency column")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseMigrations", "❌ Migration failed: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+    
+    /**
      * Get all migrations for the database
      * Add new migrations to this list as you create them
      */
@@ -177,8 +247,11 @@ object DatabaseMigrations {
         return arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
-            MIGRATION_3_4
-            // Add future migrations here: MIGRATION_4_5, etc.
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7
+            // Add future migrations here: MIGRATION_6_7, etc.
         )
     }
 }

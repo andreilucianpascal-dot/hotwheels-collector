@@ -21,7 +21,8 @@ data class CarDataToSync(
     val screenType: String,
     val pendingPhotos: List<PhotoData>,
     val preOptimizedThumbnailPath: String,
-    val preOptimizedFullPath: String
+    val preOptimizedFullPath: String,
+    val originalBrowsePhotoUrl: String? = null // ✅ Firebase URL from Browse (null for Take Photos)
 )
 
 /**

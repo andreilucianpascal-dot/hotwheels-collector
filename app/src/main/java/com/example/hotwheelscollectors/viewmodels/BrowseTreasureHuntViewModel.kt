@@ -59,6 +59,9 @@ class BrowseTreasureHuntViewModel @Inject constructor(
             allCars
         } else {
             allCars.filter { car ->
+                // For barcode, use exact match to find all variants with same barcode
+                // For other fields, use contains for flexible search
+                car.barcode.lowercase() == query ||  // Exact match for barcode
                 car.carName.lowercase().contains(query) ||
                 car.brand.lowercase().contains(query) ||
                 car.series.lowercase().contains(query) ||

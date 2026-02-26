@@ -1,4 +1,4 @@
-package com.example.hotwheelscollectors.viewmodels
+﻿package com.example.hotwheelscollectors.viewmodels
 
 import android.content.Intent
 import androidx.lifecycle.ViewModel
@@ -7,19 +7,28 @@ import com.example.hotwheelscollectors.data.auth.GoogleDriveAuthService
 import com.example.hotwheelscollectors.data.auth.GoogleSignInResult
 import com.example.hotwheelscollectors.data.local.UserPreferences
 import com.example.hotwheelscollectors.data.repository.AuthRepository
+import com.example.hotwheelscollectors.data.repository.GoogleDriveRepository
+import com.example.hotwheelscollectors.data.repository.StorageOrchestrator
+import com.example.hotwheelscollectors.data.repository.CloudUserSettingsRepository
 import com.example.hotwheelscollectors.model.PersonalStorageType
+import android.util.Log
+import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val userPreferences: UserPreferences,
     private val googleDriveAuthService: GoogleDriveAuthService,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val googleDriveRepository: GoogleDriveRepository,
+    private val storageOrchestrator: StorageOrchestrator,
+    private val cloudUserSettingsRepository: CloudUserSettingsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -49,6 +58,8 @@ class SettingsViewModel @Inject constructor(
 
     fun updateStorageType(storageType: PersonalStorageType) {
         viewModelScope.launch {
+            android.util.Log.d("SettingsViewModel", "📝 updateStorageType called with: $storageType")
+            
             // If switching to Google Drive, check if user is signed in
             if (storageType == PersonalStorageType.GOOGLE_DRIVE && !_uiState.value.isGoogleDriveSignedIn) {
                 _uiState.value = _uiState.value.copy(
@@ -57,9 +68,60 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
             
+            // Get current storage type before updating
+            val previousStorageType = _uiState.value.storageType
+            
+            // ✅ This will update BOTH storageType and storageLocation (synced in UserPreferences)
             userPreferences.updateStorageType(storageType)
+            
+            android.util.Log.d("SettingsViewModel", "✅ Storage type updated to: $storageType (storageLocation will be synced automatically)")
+            
+            // ✅ Save to cloud (survives uninstall)
+            if (_uiState.value.isGoogleDriveSignedIn) {
+                launch(Dispatchers.IO) {
+                    try {
+                        val saveResult = cloudUserSettingsRepository.savePrimaryStorage(storageType)
+                        if (saveResult.isSuccess) {
+                            android.util.Log.i("SettingsViewModel", "✅ Primary storage saved to cloud: $storageType")
+                        } else {
+                            android.util.Log.w("SettingsViewModel", "⚠️ Failed to save storage type to cloud: ${saveResult.exceptionOrNull()?.message}")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("SettingsViewModel", "⚠️ Error saving storage type to cloud: ${e.message}")
+                    }
+                }
+            }
+            
+            // ✅ Delegate migration to StorageOrchestrator (ViewModel does NOT migrate directly)
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                message = "Migrating storage..."
+            )
+            
+            val migrationResult = storageOrchestrator.onStorageChanged(previousStorageType, storageType)
+            if (migrationResult.isSuccess) {
+                android.util.Log.i("SettingsViewModel", "✅ Storage migration completed successfully!")
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    message = "✅ Storage migrated successfully!"
+                )
+            } else {
+                android.util.Log.e("SettingsViewModel", "❌ Storage migration failed: ${migrationResult.exceptionOrNull()?.message}")
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Migration failed: ${migrationResult.exceptionOrNull()?.message ?: "Unknown error"}"
+                )
+            }
         }
     }
+    
+    // ✅ REMOVED: All migration/restore logic moved to StorageOrchestrator
+    // - syncRoomFromDrive() → StorageOrchestrator.onStorageChanged()
+    // - migrateLocalCarsToDrive() → StorageOrchestrator.onStorageChanged()
+    // - checkAndRestoreFromCloud() → StorageOrchestrator.onAppStart()
+    //
+    // SettingsViewModel now only orchestrates UI state, not data migration.
+    // Storage operations are handled by StorageOrchestrator.
 
     fun getGoogleSignInIntent(): Intent {
         return googleDriveAuthService.getSignInIntent()
@@ -76,11 +138,19 @@ class SettingsViewModel @Inject constructor(
                         googleDriveUserEmail = result.account.email,
                         isLoading = false,
                         message = "Successfully signed in to Google Drive"
-                    )
-                    
-                    // Auto-switch to Google Drive storage if user was on local storage
-                    if (_uiState.value.storageType == PersonalStorageType.LOCAL) {
-                        userPreferences.updateStorageType(PersonalStorageType.GOOGLE_DRIVE)
+                    )                    // ✅ CRITICAL: Trigger data restore after Google Drive authentication
+                    launch(Dispatchers.IO) {
+                        try {
+                            android.util.Log.d("SettingsViewModel", "User authenticated to Google Drive - triggering data restore...")
+                            val restoreResult = storageOrchestrator.onUserAuthenticated()
+                            if (restoreResult.isSuccess) {
+                                android.util.Log.i("SettingsViewModel", "✅ Data restored from Drive after authentication")
+                            } else {
+                                android.util.Log.w("SettingsViewModel", "⚠️ Data restore failed after authentication: ${restoreResult.exceptionOrNull()?.message}")
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("SettingsViewModel", "Failed to restore data after authentication", e)
+                        }
                     }
                 }
                 is GoogleSignInResult.Error -> {
@@ -134,6 +204,39 @@ class SettingsViewModel @Inject constructor(
 
     fun refreshGoogleDriveStatus() {
         checkGoogleDriveStatus()
+    }
+    
+    // ✅ REMOVED: migrateLocalCarsToDrive()
+    // Migration logic is now in StorageOrchestrator.onStorageChanged()
+    // ViewModel does NOT migrate data directly - it only orchestrates UI state.
+    
+    fun testGoogleDriveConnection() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, message = null)
+            
+            if (!_uiState.value.isGoogleDriveSignedIn) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Please sign in to Google Drive first"
+                )
+                return@launch
+            }
+            
+            val result = googleDriveRepository.testConnectionAndCreateFolder()
+            
+            if (result.isSuccess) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    message = "✅ Connection successful! Folder 'HotWheelsCollectors' created/verified in your Google Drive."
+                )
+            } else {
+                val errorMsg = result.exceptionOrNull()?.message ?: "Unknown error"
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Connection test failed: $errorMsg"
+                )
+            }
+        }
     }
 
     fun toggleNotifications() {
@@ -218,3 +321,4 @@ data class SettingsUiState(
     val notificationsEnabled: Boolean = true,
     val autoSyncEnabled: Boolean = true
 )
+

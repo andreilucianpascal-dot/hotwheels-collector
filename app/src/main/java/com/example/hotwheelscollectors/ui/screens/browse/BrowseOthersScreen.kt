@@ -1,5 +1,6 @@
 package com.example.hotwheelscollectors.ui.screens.browse
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,9 +20,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import android.net.Uri
+import androidx.compose.foundation.clickable
+import com.example.hotwheelscollectors.ui.theme.HotWheelsThemeManager
 import com.example.hotwheelscollectors.viewmodels.BrowseOthersViewModel
 import com.example.hotwheelscollectors.viewmodels.AddFromBrowseViewModel
 import com.example.hotwheelscollectors.viewmodels.AddFromBrowseUiState
+import com.example.hotwheelscollectors.utils.PriceSearchHelper
+import android.content.Intent
 
 @Composable
 fun BrowseOthersScreen(
@@ -37,6 +43,18 @@ fun BrowseOthersScreen(
     val currentUiState = uiState
     val snackbarHostState = remember { SnackbarHostState() }
     
+    // Check for barcode from barcode scanner
+    val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
+    val searchBarcode = savedStateHandle?.get<String>("search_barcode")
+    
+    LaunchedEffect(searchBarcode) {
+        searchBarcode?.let { barcode ->
+            viewModel.updateSearchQuery(barcode)
+            // Clear the barcode from savedStateHandle after using it
+            savedStateHandle?.remove<String>("search_barcode")
+        }
+    }
+    
     LaunchedEffect(addUiState) {
         when (val state = addUiState) {
             is AddFromBrowseUiState.Success -> {
@@ -50,8 +68,14 @@ fun BrowseOthersScreen(
             else -> {}
         }
     }
-    
-        Scaffold(
+
+    val themeState by com.example.hotwheelscollectors.viewmodels.AppThemeViewModel::class
+        .let { hiltViewModel<com.example.hotwheelscollectors.viewmodels.AppThemeViewModel>() }
+        .uiState
+        .collectAsState()
+    val bgTheme = HotWheelsThemeManager.getBackgroundTheme(themeState.colorScheme)
+
+    Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Browse Others - Global Database") },
@@ -72,6 +96,15 @@ fun BrowseOthersScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(
+                    brush = bgTheme?.secondaryGradient
+                        ?: androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.background,
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
+                )
                 .padding(paddingValues)
         ) {
             // Search bar
@@ -161,81 +194,11 @@ fun BrowseOthersScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(filteredCars) { car ->
-                                val context = LocalContext.current
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    onClick = { 
-                                        // Navigate to car details or add to collection
-                                        // Implementation will be added in future update
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        if (car.frontPhotoUrl.isNotEmpty()) {
-                                            AsyncImage(
-                                                model = ImageRequest.Builder(context)
-                                                    .data(car.frontPhotoUrl)
-                                                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED) // ✅ CACHE ACTIVAT
-                                                    .diskCachePolicy(coil.request.CachePolicy.ENABLED) // ✅ CACHE ACTIVAT
-                                                    .crossfade(true)
-                                                    .build(),
-                                                contentDescription = "Car Photo",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier
-                                                    .size(120.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                            )
-                                            Spacer(modifier = Modifier.width(16.dp))
-                                        }
-                                        
-                                        Column(
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text(
-                                                text = car.carName,
-                                                style = MaterialTheme.typography.titleMedium
-                                            )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = "${car.brand} - ${car.series} (${car.year})",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            if (car.color.isNotEmpty()) {
-                                                Text(
-                                                    text = "Color: ${car.color}",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = "Verified by ${car.verificationCount} users",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Button(
-                                                onClick = { addFromBrowseViewModel.addCarToCollection(car) },
-                                                enabled = addUiState !is AddFromBrowseUiState.Loading,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                if (addUiState is AddFromBrowseUiState.Loading) {
-                                                    CircularProgressIndicator(
-                                                        modifier = Modifier.size(20.dp),
-                                                        color = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                } else {
-                                                    Icon(Icons.Default.Add, contentDescription = null)
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Add to Collection")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                com.example.hotwheelscollectors.ui.components.BrowseGlobalCarCard(
+                                    car = car,
+                                    addUiState = addUiState,
+                                    onAddToCollection = { addFromBrowseViewModel.addCarToCollection(car) }
+                                )
                             }
                         }
                     }

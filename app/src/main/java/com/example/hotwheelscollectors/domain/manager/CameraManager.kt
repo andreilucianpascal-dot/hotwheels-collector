@@ -48,6 +48,9 @@ class CameraManager @Inject constructor(
             .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
             .build()
     )
+    
+    // TFLite/OpenCV DEZACTIVAT COMPLET - folosim doar crop simplu
+    // private val tfliteManager = TFLiteSegmentationManager(context)
 
     /**
      * Processes car photos according to the standard flow:
@@ -70,27 +73,45 @@ class CameraManager @Inject constructor(
             backPhotoUri?.let { deletePhoto(it) }
             Timber.d("Deleted back photo after barcode extraction")
             
-            // 3. Generate thumbnail and full photo IN PARALLEL (both use front photo, independent)
-            // ✅ PARALLELIZATION: Both operations run simultaneously, reducing total time by ~33-50%
-            val thumbnailDeferred = async { 
-                val result = generateThumbnail(frontPhotoUri, 300_000)
-                Timber.d("Generated thumbnail: $result")
-                result
+            // 3. Process ONCE with TFLite (at high resolution), then downscale for thumbnail
+            // ✅ OPTIMIZATION: TFLite runs only once, thumbnail is derived from full photo
+            // ✅ CONSISTENCY: Thumbnail and zoom show EXACTLY the same image (just scaled)
+            
+            val originalBitmap = loadBitmapFromUri(frontPhotoUri)
+            if (originalBitmap == null) {
+                Timber.e("Failed to load original bitmap")
+                return@withContext PhotoProcessingResult(
+                    barcode = barcode,
+                    thumbnailUri = null,
+                    fullPhotoUri = null,
+                    success = false,
+                    error = "Failed to load image"
+                )
             }
             
-            val fullPhotoDeferred = async { 
-                val result = generateFullPhoto(frontPhotoUri, 500_000)
-                Timber.d("Generated full photo: $result")
-                result
-            }
+            // STEP 1: Process FULL photo with TFLite (2048px max)
+            val preScaled = scaleBitmapToMax(originalBitmap, maxSidePx = 2048)
+            Timber.d("📸 PROCESSING: ${preScaled.width}x${preScaled.height}")
+            android.util.Log.d("CameraManager", "📸 PROCESSING: ${preScaled.width}x${preScaled.height}")
+            val processedBitmap = drawCardOnWhiteBackground(preScaled)
             
-            // Wait for both to complete
-            val results = awaitAll(thumbnailDeferred, fullPhotoDeferred)
-            val thumbnailUri = results[0] as Uri?
-            val fullPhotoUri = results[1] as Uri?
+            // STEP 2: Generate FULL photo from processed bitmap
+            val fullPhotoUri = saveBitmapToFile(processedBitmap, "full_photo", 500_000, 90)
+            Timber.d("Generated full photo: $fullPhotoUri")
+            
+            // STEP 3: Generate THUMBNAIL from SAME processed bitmap (no TFLite again)
+            val thumbnailBitmap = scaleBitmapToMax(processedBitmap, maxSidePx = 720)
+            val thumbnailUri = saveBitmapToFile(thumbnailBitmap, "thumbnail", 300_000, 85)
+            Timber.d("Generated thumbnail: $thumbnailUri")
+            
+            // Cleanup
+            originalBitmap.recycle()
+            preScaled.recycle()
+            processedBitmap.recycle()
+            thumbnailBitmap.recycle()
             
             val totalTime = System.currentTimeMillis() - startTime
-            Timber.d("✅ Photo processing completed in ${totalTime}ms (parallelized)")
+            Timber.d("✅ Photo processing completed in ${totalTime}ms (TFLite run once, thumbnail derived)")
             
             PhotoProcessingResult(
                 barcode = barcode,
@@ -277,88 +298,55 @@ class CameraManager @Inject constructor(
     }
 
     /**
-     * Generates thumbnail with specified max size in bytes
+     * Saves a bitmap to file with compression to target size
+     * Optimized: single compression pass, no decode/re-encode
      */
-    private suspend fun generateThumbnail(originalUri: Uri, maxSizeBytes: Int): Uri? = withContext(Dispatchers.IO) {
+    private fun saveBitmapToFile(
+        bitmap: Bitmap,
+        prefix: String,
+        maxSizeBytes: Int,
+        initialQuality: Int = 90
+    ): Uri? {
         try {
-            val originalBitmap = loadBitmapFromUri(originalUri) ?: return@withContext null
-
-            // ✅ NEW: Use real card dimensions (108×108 or 108×165) with white background
-            val withWhiteBackground = drawCardOnWhiteBackground(originalBitmap)
-            val downscaled = scaleBitmapToMax(withWhiteBackground, maxSidePx = 720)
+            val file = File(context.cacheDir, "${prefix}_${System.currentTimeMillis()}.jpg")
             
-            // Calculate compression ratio to achieve target size
-            val compressedBitmap = compressBitmapToSize(downscaled, maxSizeBytes, minQuality = 60)
+            // Single-pass compression directly to file
+            var quality = initialQuality
+            val minQuality = 60
             
-            // Save compressed bitmap to file
-            val thumbnailFile = File(context.cacheDir, "thumbnail_${System.currentTimeMillis()}.jpg")
-            val outputStream = FileOutputStream(thumbnailFile)
-            compressedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
-            outputStream.close()
+            do {
+                val outputStream = FileOutputStream(file)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+                outputStream.close()
+                
+                if (file.length() <= maxSizeBytes || quality <= minQuality) {
+                    break
+                }
+                quality -= 10
+            } while (true)
             
-            Timber.d("Generated thumbnail: ${thumbnailFile.absolutePath}, size: ${thumbnailFile.length()} bytes")
-            Uri.fromFile(thumbnailFile)
+            Timber.d("Saved ${prefix}: ${file.absolutePath}, size: ${file.length()} bytes, quality: $quality")
+            return Uri.fromFile(file)
             
         } catch (e: Exception) {
-            Timber.e(e, "Failed to generate thumbnail")
-            null
+            Timber.e(e, "Failed to save bitmap to file (prefix: $prefix)")
+            return null
         }
     }
 
-    /**
-     * Generates full photo with specified max size in bytes
-     */
-    private suspend fun generateFullPhoto(originalUri: Uri, maxSizeBytes: Int): Uri? = withContext(Dispatchers.IO) {
-        try {
-            val originalBitmap = loadBitmapFromUri(originalUri) ?: return@withContext null
-
-            // ✅ NEW: Use real card dimensions (108×108 or 108×165) with white background
-            val withWhiteBackground = drawCardOnWhiteBackground(originalBitmap)
-            val downscaled = scaleBitmapToMax(withWhiteBackground, maxSidePx = 2048)
-            
-            // Calculate compression ratio to achieve target size
-            val compressedBitmap = compressBitmapToSize(downscaled, maxSizeBytes, minQuality = 60)
-            
-            // Save compressed bitmap to file
-            val fullPhotoFile = File(context.cacheDir, "full_photo_${System.currentTimeMillis()}.jpg")
-            val outputStream = FileOutputStream(fullPhotoFile)
-            compressedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-            outputStream.close()
-            
-            Timber.d("Generated full photo: ${fullPhotoFile.absolutePath}, size: ${fullPhotoFile.length()} bytes")
-            Uri.fromFile(fullPhotoFile)
-            
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to generate full photo")
-            null
-        }
-    }
-
-    /**
-     * Compresses bitmap to target size
-     */
-    private fun compressBitmapToSize(bitmap: Bitmap, targetSizeBytes: Int, minQuality: Int = 60): Bitmap {
-        var quality = 90
-        val outputStream = ByteArrayOutputStream()
-        
-        do {
-            outputStream.reset()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
-            quality -= 10
-        } while (outputStream.size() > targetSizeBytes && quality > minQuality)
-        
-        val compressedByteArray = outputStream.toByteArray()
-        return BitmapFactory.decodeByteArray(compressedByteArray, 0, compressedByteArray.size)
-    }
 
     /**
      * Scales a bitmap so that its largest side equals maxSidePx, preserving aspect ratio.
+     * Returns a NEW bitmap (even if no scaling needed) to avoid double-recycle issues.
      */
     private fun scaleBitmapToMax(bitmap: Bitmap, maxSidePx: Int): Bitmap {
         val w = bitmap.width
         val h = bitmap.height
         val maxSide = maxOf(w, h)
-        if (maxSide <= maxSidePx) return bitmap
+        if (maxSide <= maxSidePx) {
+            // Return a copy to avoid double-recycle when caller does bitmap.recycle()
+            return bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
+        }
 
         val scale = maxSidePx.toFloat() / maxSide.toFloat()
         val newW = (w * scale).toInt().coerceAtLeast(1)
@@ -371,6 +359,12 @@ class CameraManager @Inject constructor(
      * Small card: aspect ratio ≈ 1.0 (square)
      * Long card: aspect ratio ≈ 0.654 (108/165) or ≈ 1.528 (165/108)
      */
+    /**
+     * DEPRECATED - Funcții vechi de template matching/PNG masks
+     * Vor fi șterse după ce verificăm că TFLite funcționează corect
+     */
+    
+    // CardType enum - nu mai este necesar
     private enum class CardType {
         SMALL,  // 108mm × 108mm (aspect ratio = 1.0)
         LONG    // 108mm × 165mm (aspect ratio = 108/165 ≈ 0.654)
@@ -581,6 +575,77 @@ class CameraManager @Inject constructor(
     }
 
     /**
+     * TEST: Applies PNG mask to extract card and place on white background.
+     * This is a test function to verify mask functionality before TFLite integration.
+     */
+    suspend fun applyPngMaskTest(source: Bitmap, maskPath: String?): Bitmap? = withContext(Dispatchers.IO) {
+        if (maskPath == null) return@withContext null
+        
+        try {
+            val maskFile = File(maskPath)
+            if (!maskFile.exists()) {
+                Timber.w("Mask file not found: $maskPath")
+                return@withContext null
+            }
+            
+            val maskBitmap = BitmapFactory.decodeFile(maskFile.absolutePath)
+            if (maskBitmap == null) {
+                Timber.w("Failed to decode mask: $maskPath")
+                return@withContext null
+            }
+            
+            // Resize mask to match source dimensions
+            val resizedMask = Bitmap.createScaledBitmap(
+                maskBitmap,
+                source.width,
+                source.height,
+                true
+            )
+            
+            // Create result bitmap with white background
+            val result = Bitmap.createBitmap(
+                source.width,
+                source.height,
+                Bitmap.Config.ARGB_8888
+            )
+            
+            // Apply mask: where mask is white (255), keep source pixel; where black (0), use white
+            val sourcePixels = IntArray(source.width * source.height)
+            source.getPixels(sourcePixels, 0, source.width, 0, 0, source.width, source.height)
+            
+            val maskPixels = IntArray(resizedMask.width * resizedMask.height)
+            resizedMask.getPixels(maskPixels, 0, resizedMask.width, 0, 0, resizedMask.width, resizedMask.height)
+            
+            val resultPixels = IntArray(source.width * source.height)
+            
+            for (i in sourcePixels.indices) {
+                // Get grayscale value from mask (use red channel)
+                val maskValue = (maskPixels[i] shr 16) and 0xFF
+                
+                if (maskValue > 127) { // White in mask = keep source pixel
+                    resultPixels[i] = sourcePixels[i]
+                } else { // Black in mask = white background
+                    resultPixels[i] = 0xFFFFFFFF.toInt()
+                }
+            }
+            
+            result.setPixels(resultPixels, 0, source.width, 0, 0, source.width, source.height)
+            
+            // Cleanup
+            if (resizedMask != maskBitmap) {
+                resizedMask.recycle()
+            }
+            maskBitmap.recycle()
+            
+            Timber.d("✅ Applied PNG mask successfully")
+            result
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to apply PNG mask")
+            null
+        }
+    }
+
+    /**
      * Applies template mask to extract card and place on white background.
      */
     private fun applyTemplateMask(source: Bitmap, template: Bitmap, cardRect: android.graphics.Rect): Bitmap {
@@ -592,8 +657,14 @@ class CameraManager @Inject constructor(
         val canvas = android.graphics.Canvas(result)
         canvas.drawColor(android.graphics.Color.WHITE)
         
-        val cardWidth = cardRect.right - cardRect.left
-        val cardHeight = cardRect.bottom - cardRect.top
+        // Ensure cardRect is within source bounds
+        val safeLeft = cardRect.left.coerceIn(0, source.width - 1)
+        val safeTop = cardRect.top.coerceIn(0, source.height - 1)
+        val safeRight = cardRect.right.coerceIn(safeLeft + 1, source.width)
+        val safeBottom = cardRect.bottom.coerceIn(safeTop + 1, source.height)
+        
+        val cardWidth = safeRight - safeLeft
+        val cardHeight = safeBottom - safeTop
         
         // Scale template to match cardRect size exactly
         val scaledTemplate = Bitmap.createScaledBitmap(
@@ -603,13 +674,13 @@ class CameraManager @Inject constructor(
             true
         )
         
-        // Extract card region from source
+        // Extract card region from source using safe coordinates
         val cardBitmap = Bitmap.createBitmap(
             source,
-            cardRect.left.coerceAtLeast(0),
-            cardRect.top.coerceAtLeast(0),
-            cardWidth.coerceAtMost(source.width - cardRect.left),
-            cardHeight.coerceAtMost(source.height - cardRect.top)
+            safeLeft,
+            safeTop,
+            cardWidth,
+            cardHeight
         )
         
         // Ensure dimensions match
@@ -640,27 +711,48 @@ class CameraManager @Inject constructor(
         
         cardBitmap.setPixels(cardPixels, 0, cardBitmap.width, 0, 0, cardBitmap.width, cardBitmap.height)
         
-        // Draw card on white background at correct position
+        // Draw card on white background at correct position (using safe coordinates)
         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-        canvas.drawBitmap(cardBitmap, cardRect.left.toFloat(), cardRect.top.toFloat(), paint)
+        canvas.drawBitmap(cardBitmap, safeLeft.toFloat(), safeTop.toFloat(), paint)
         
         if (scaledTemplate != template) {
             scaledTemplate.recycle()
         }
         cardBitmap.recycle()
         
-        Timber.d("Applied template mask: card ${finalCardWidth}x${finalCardHeight} at (${cardRect.left}, ${cardRect.top})")
+        Timber.d("Applied template mask: card ${finalCardWidth}x${finalCardHeight} at (${safeLeft}, ${safeTop}) [original rect: (${cardRect.left}, ${cardRect.top}) to (${cardRect.right}, ${cardRect.bottom})]")
         
         return result
     }
 
     /**
-     * Draws the card on white background using template matching with real card templates.
-     * Tries both templates and uses the one with best match.
-     * Falls back to aspect ratio crop if template matching fails.
+     * TEST: Loads PNG mask from assets for testing
      */
-    private fun drawCardOnWhiteBackground(source: Bitmap): Bitmap {
-        // Try both templates and use the one with best match
+    private fun loadMaskFromAssets(maskName: String): Bitmap? {
+        return try {
+            Timber.d("🔍 Trying to load mask: mask/$maskName")
+            val inputStream = context.assets.open("mask/$maskName")
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+            if (bitmap != null) {
+                Timber.d("✅ Successfully loaded mask: $maskName (${bitmap.width}x${bitmap.height})")
+            } else {
+                Timber.w("⚠️ Failed to decode mask: $maskName")
+            }
+            bitmap
+        } catch (e: Exception) {
+            Timber.w(e, "❌ Mask not found in assets: masks/$maskName")
+            null
+        }
+    }
+
+    /**
+     * TEST: Applies PNG mask directly (for testing with 4 masks)
+     * NOTE: This is just for testing - applies first available mask to any photo
+     * In production, TFLite will generate masks dynamically for each photo
+     */
+    private suspend fun applyPngMaskFromAssets(source: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
+        // STEP 1: Detect card in photo using template matching
         val smallTemplate = loadTemplateFromAssets("108.png")
         val longTemplate = loadTemplateFromAssets("165.png")
         
@@ -668,13 +760,12 @@ class CameraManager @Inject constructor(
         var bestTemplate: Bitmap? = null
         var bestScore = 0f
         
-        // Try small template (108×108)
+        // Try small template
         if (smallTemplate != null) {
             val match = findCardWithTemplate(source, smallTemplate)
             if (match != null) {
-                // Calculate match score for this template
                 val score = calculateMatchScoreForRect(source, smallTemplate, match)
-                Timber.d("Small template match score: $score")
+                Timber.d("🔍 Small template match score: $score")
                 if (score > bestScore) {
                     bestScore = score
                     bestMatch = match
@@ -683,102 +774,191 @@ class CameraManager @Inject constructor(
             }
         }
         
-        // Try long template (108×165)
+        // Try long template
         if (longTemplate != null) {
             val match = findCardWithTemplate(source, longTemplate)
             if (match != null) {
-                // Calculate match score for this template
                 val score = calculateMatchScoreForRect(source, longTemplate, match)
-                Timber.d("Long template match score: $score")
+                Timber.d("🔍 Long template match score: $score")
                 if (score > bestScore) {
                     bestScore = score
                     bestMatch = match
                     bestTemplate = longTemplate
-                    // Recycle small template if long is better
                     if (smallTemplate != null && smallTemplate != longTemplate) {
                         smallTemplate.recycle()
                     }
-                } else if (smallTemplate != null && smallTemplate != longTemplate) {
-                    longTemplate.recycle()
                 }
-            } else if (smallTemplate != null && smallTemplate != longTemplate) {
-                longTemplate.recycle()
             }
         }
         
-        // Use best match if found
-        if (bestTemplate != null && bestMatch != null && bestScore > 0.3f) {
-            Timber.d("Using template matching: ${if (bestTemplate == smallTemplate) "SMALL" else "LONG"} template, score: $bestScore")
-            val result = applyTemplateMask(source, bestTemplate, bestMatch)
-            // Recycle unused template
-            if (bestTemplate == smallTemplate && longTemplate != null && longTemplate != smallTemplate) {
-                longTemplate.recycle()
-            } else if (bestTemplate == longTemplate && smallTemplate != null && smallTemplate != longTemplate) {
-                smallTemplate.recycle()
-            }
-            return result
-        } else {
-            Timber.w("No good template match found (best score: $bestScore), falling back to aspect ratio crop")
-            // Recycle templates
-            smallTemplate?.recycle()
-            longTemplate?.recycle()
+        if (bestMatch == null || bestScore < 0.3f) {
+            Timber.w("⚠️ No card detected with template matching, cannot apply PNG mask")
+            bestTemplate?.recycle()
+            return@withContext null
         }
         
-        // Fallback: use aspect ratio-based crop (existing logic)
+        Timber.d("✅ Card detected at: ${bestMatch.left}, ${bestMatch.top}, ${bestMatch.width()}x${bestMatch.height()}")
+        
+        // STEP 2: Load PNG mask
+        val maskNames = listOf("0.png", "11.png", "24.png", "33.png")
+        var mask: Bitmap? = null
+        var maskName: String? = null
+        for (name in maskNames) {
+            mask = loadMaskFromAssets(name)
+            if (mask != null) {
+                maskName = name
+                Timber.d("Using test mask: $maskName (this is just for testing - not the correct mask for this photo)")
+                break
+            }
+        }
+        
+        if (mask == null) {
+            Timber.d("No test masks found in assets")
+            bestTemplate?.recycle()
+            return@withContext null
+        }
+        
+        // STEP 3: Extract card region and apply mask
+        try {
+            // Ensure card rect is within bounds
+            val safeLeft = bestMatch.left.coerceIn(0, source.width - 1)
+            val safeTop = bestMatch.top.coerceIn(0, source.height - 1)
+            val safeRight = bestMatch.right.coerceIn(safeLeft + 1, source.width)
+            val safeBottom = bestMatch.bottom.coerceIn(safeTop + 1, source.height)
+            
+            val cardWidth = safeRight - safeLeft
+            val cardHeight = safeBottom - safeTop
+            
+            // Extract card region from source
+            val cardBitmap = Bitmap.createBitmap(source, safeLeft, safeTop, cardWidth, cardHeight)
+            
+            // Calculate scale to fit mask while preserving aspect ratio
+            val maskAspectRatio = mask.width.toFloat() / mask.height.toFloat()
+            val cardAspectRatio = cardWidth.toFloat() / cardHeight.toFloat()
+            
+            val scaledMaskWidth: Int
+            val scaledMaskHeight: Int
+            val maskOffsetX: Int
+            val maskOffsetY: Int
+            
+            if (maskAspectRatio > cardAspectRatio) {
+                // Mask is wider - fit to width
+                scaledMaskWidth = cardWidth
+                scaledMaskHeight = (cardWidth / maskAspectRatio).toInt()
+                maskOffsetX = 0
+                maskOffsetY = (cardHeight - scaledMaskHeight) / 2
+            } else {
+                // Mask is taller - fit to height
+                scaledMaskHeight = cardHeight
+                scaledMaskWidth = (cardHeight * maskAspectRatio).toInt()
+                maskOffsetX = (cardWidth - scaledMaskWidth) / 2
+                maskOffsetY = 0
+            }
+            
+            // Resize mask preserving aspect ratio
+            val resizedMask = Bitmap.createScaledBitmap(
+                mask,
+                scaledMaskWidth,
+                scaledMaskHeight,
+                true
+            )
+            
+            // Apply mask to card region
+            val cardPixels = IntArray(cardWidth * cardHeight)
+            cardBitmap.getPixels(cardPixels, 0, cardWidth, 0, 0, cardWidth, cardHeight)
+            
+            val maskPixels = IntArray(resizedMask.width * resizedMask.height)
+            resizedMask.getPixels(maskPixels, 0, resizedMask.width, 0, 0, resizedMask.width, resizedMask.height)
+            
+            // Apply mask with offset (centered)
+            for (y in 0 until cardHeight) {
+                for (x in 0 until cardWidth) {
+                    val cardIdx = y * cardWidth + x
+                    
+                    // Check if this pixel is within the mask bounds
+                    val maskX = x - maskOffsetX
+                    val maskY = y - maskOffsetY
+                    
+                    if (maskX >= 0 && maskX < scaledMaskWidth && maskY >= 0 && maskY < scaledMaskHeight) {
+                        val maskIdx = maskY * scaledMaskWidth + maskX
+                        val maskValue = (maskPixels[maskIdx] shr 16) and 0xFF // Red channel
+                        if (maskValue < 127) {
+                            cardPixels[cardIdx] = 0xFFFFFFFF.toInt() // White background where mask is black
+                        }
+                    } else {
+                        // Outside mask bounds - make white
+                        cardPixels[cardIdx] = 0xFFFFFFFF.toInt()
+                    }
+                }
+            }
+            
+            cardBitmap.setPixels(cardPixels, 0, cardWidth, 0, 0, cardWidth, cardHeight)
+            
+            // STEP 4: Create result with white background and draw card
+            val result = Bitmap.createBitmap(
+                source.width,
+                source.height,
+                Bitmap.Config.ARGB_8888
+            )
+            val canvas = android.graphics.Canvas(result)
+            canvas.drawColor(0xFFFFFFFF.toInt()) // White background
+            
+            // Draw masked card at detected position
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            canvas.drawBitmap(cardBitmap, safeLeft.toFloat(), safeTop.toFloat(), paint)
+            
+            // Cleanup
+            cardBitmap.recycle()
+            if (resizedMask != mask) resizedMask.recycle()
+            mask.recycle()
+            bestTemplate?.recycle()
+            
+            Timber.d("✅ Applied test PNG mask: $maskName to detected card region (${cardWidth}x${cardHeight})")
+            return@withContext result
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to apply PNG mask")
+            mask?.recycle()
+            bestTemplate?.recycle()
+            null
+        }
+    }
+
+    /**
+     * Draws the card on white background.
+     * 
+     * SIMPLIFICAT: Crop dreptunghiular simplu centrat cu padding minim.
+     * Elimină fundalul excesiv fără procesare complexă (FĂRĂ TFLite/OpenCV).
+     */
+    private suspend fun drawCardOnWhiteBackground(source: Bitmap): Bitmap = withContext(Dispatchers.Default) {
+        Timber.d("📸 Frame with padding: preserve 100% of original photo, add white frame")
+        
         val width = source.width
         val height = source.height
         
-        // Detect card type for fallback
-        val cardType = detectCardType(source)
+        // ✅ NO CROP: Păstrează 100% din poza originală
+        // Doar adaugă padding alb în jur (5% pe fiecare latură, min 20px, max 50px)
+        val paddingPercent = 0.05f
+        val paddingPx = (width.coerceAtLeast(height) * paddingPercent).toInt()
+            .coerceAtLeast(20)
+            .coerceAtMost(50)
         
-        // Real card dimensions in mm (108×108 for small, 108×165 for long)
-        val smallCardWidth = 108f
-        val smallCardHeight = 108f
-        val longCardWidth = 108f
-        val longCardHeight = 165f
-        
-        // Calculate target aspect ratio
-        val targetAspectRatio = when (cardType) {
-            CardType.SMALL -> smallCardWidth / smallCardHeight // 1.0
-            CardType.LONG -> longCardWidth / longCardHeight // ≈ 0.654
-        }
-        
-        // Calculate crop dimensions maintaining target aspect ratio
-        val sourceAspectRatio = width.toFloat() / height.toFloat()
-        val cropWidth: Int
-        val cropHeight: Int
-        
-        if (sourceAspectRatio > targetAspectRatio) {
-            // Source is wider than target - crop width
-            cropHeight = height
-            cropWidth = (height * targetAspectRatio).toInt()
-        } else {
-            // Source is taller than target - crop height
-            cropWidth = width
-            cropHeight = (width / targetAspectRatio).toInt()
-        }
-        
-        // Center the crop
-        val left = (width - cropWidth) / 2
-        val top = (height - cropHeight) / 2
-        
-        // Create white canvas with same size as source
-        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        // Creează canvas cu dimensiunea originală + padding
+        val result = Bitmap.createBitmap(
+            width + paddingPx * 2,
+            height + paddingPx * 2,
+            Bitmap.Config.ARGB_8888
+        )
         val canvas = android.graphics.Canvas(result)
+        
+        // Desenează fundal alb
         canvas.drawColor(android.graphics.Color.WHITE)
         
-        // Draw cropped card centered on white background
-        val src = android.graphics.Rect(left, top, left + cropWidth, top + cropHeight)
-        val dstLeft = (width - cropWidth) / 2
-        val dstTop = (height - cropHeight) / 2
-        val dst = android.graphics.Rect(dstLeft, dstTop, dstLeft + cropWidth, dstTop + cropHeight)
-        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        // Plasează poza originală completă pe fundal alb (centrată cu padding)
+        canvas.drawBitmap(source, paddingPx.toFloat(), paddingPx.toFloat(), null)
         
-        canvas.drawBitmap(source, src, dst, paint)
+        Timber.d("✅ Frame with padding: ${width}x${height} -> ${result.width}x${result.height} (preserved 100%, padding: ${paddingPx}px)")
         
-        Timber.d("Fallback: Card type detected: $cardType, crop: ${cropWidth}x${cropHeight}, target aspect: $targetAspectRatio")
-        
-        return result
+        return@withContext result
     }
     /**
      * Result of photo processing

@@ -2,12 +2,15 @@ package com.example.hotwheelscollectors.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.hotwheelscollectors.data.local.UserPreferences
 import com.example.hotwheelscollectors.data.local.dao.CarDao
 import com.example.hotwheelscollectors.data.local.dao.PhotoDao
 import com.example.hotwheelscollectors.data.local.entities.CarEntity
 import com.example.hotwheelscollectors.data.local.entities.PhotoEntity
 import com.example.hotwheelscollectors.data.local.entities.SyncStatus
 import com.example.hotwheelscollectors.data.repository.AuthRepository
+import com.example.hotwheelscollectors.data.repository.GoogleDriveRepository
+import com.example.hotwheelscollectors.model.PersonalStorageType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -22,7 +25,9 @@ import javax.inject.Inject
 class CarManagementViewModel @Inject constructor(
     private val carDao: CarDao,
     private val photoDao: PhotoDao,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val userPreferences: UserPreferences,
+    private val googleDriveRepository: GoogleDriveRepository
 ) : ViewModel() {
 
     // Photo management functions
@@ -188,6 +193,10 @@ class CarManagementViewModel @Inject constructor(
                         lastModified = Date()
                     )
                     carDao.updateCar(updatedCar)
+                    val storageType = userPreferences.storageType.first()
+                    if (storageType == PersonalStorageType.GOOGLE_DRIVE) {
+                        googleDriveRepository.upsertCarInDbJsonIfDrivePrimary(updatedCar)
+                    }
                     android.util.Log.i("CarManagementViewModel", "Car moved successfully: $carId")
                 }
             } catch (e: Exception) {
